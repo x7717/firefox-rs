@@ -5,7 +5,7 @@ use foxjson::sample;
 
 fn bench_parse(c: &mut Criterion) {
     let mut group = c.benchmark_group("parse");
-    let docs: [(&str, String); 3] = [
+    let docs: [(&str, String); 5] = [
         (
             "small",
             r#"{"name":"Firefox","version":132.0,"ok":true,"prefs":{"theme":"dark","zoom":1.25}}"#
@@ -13,6 +13,9 @@ fn bench_parse(c: &mut Criterion) {
         ),
         ("session-500", sample::session(500)),
         ("session-5000", sample::session(5000)),
+        // итерация 3: изолированные горячие пути
+        ("nums-5000", sample::nums(5000)),   // быстрый путь parse_number
+        ("strs-5000", sample::strs(5000)),   // быстрый путь parse_string (SWAR)
     ];
     for (name, doc) in docs {
         group.throughput(Throughput::Bytes(doc.len() as u64));
