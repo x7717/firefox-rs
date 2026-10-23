@@ -22,6 +22,7 @@
 //! - ограничение глубины вложенности ([`MAX_DEPTH`]).
 
 use std::fmt;
+use std::sync::OnceLock;
 
 /// Максимальная глубина вложенности (как в serde_json по умолчанию).
 pub const MAX_DEPTH: usize = 128;
@@ -247,7 +248,9 @@ impl<'d, 'a> ObjectRef<'d, 'a> {
 
     /// Ключ пары `i` — заимствован из входа (иначе декодирован в owned-буфер).
     pub fn key_is_borrowed(&self, i: usize) -> bool {
-        self.pair_at(i).map(|(k, _)| k.is_str_borrowed()).unwrap_or(false)
+        self.pair_at(i)
+            .map(|(k, _)| k.is_str_borrowed())
+            .unwrap_or(false)
     }
 
     /// Ключ пары `i`.
@@ -422,7 +425,13 @@ impl<'a> Document<'a> {
             bytes: input.as_bytes(),
             pos: 0,
             depth: 0,
-            tape: Vec::with_capacity(64),
+            // Итерация 5: резерв ленты по длине входа. Каждое значение
+            // занимает >= 1 байт входа, контейнеры — >= 2 байта на 2 узла;
+            // len/4 покрывает типичные документы (session: ~29 Б/узел)
+            // БЕЗ единого реаллока — профиль показывал ~15-20% в libc
+            // (_int_malloc/memmove) на росте ленты. Потолок 2М узлов —
+            // дальше работает геометрический рост.
+            tape: Vec::with_capacity((input.len() / 4).clamp(64, 1 << 21)),
             owned: String::new(),
         };
         p.skip_ws();
@@ -484,6 +493,125 @@ fn swar_has_control(x: u64) -> u64 {
     x.wrapping_sub(0x20 * SWAR_LO) & !x & SWAR_HI
 }
 
+// ---------------------------------------------------------------------------
+// AVX2-скан строк (итерация 5; SWAR выше — фолбэк без AVX2)
+// ---------------------------------------------------------------------------
+
+static AVX2: OnceLock<bool> = OnceLock::new();
+
+#[inline]
+fn avx2_available() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        *AVX2.get_or_init(|| std::arch::is_x86_feature_detected!("avx2"))
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
+}
+
+/// Первый индекс в `bytes[from..]`, где байт равен `a` или `b` либо
+/// (при `ctrl`) меньше 0x20; `bytes.len()`, если такого нет.
+///
+/// Маски ВТОЧНЫЕ: `_mm256_adds_epu8(x, 0xE0)` насыщает любой байт >= 0x20
+/// до 0xFF, а байты < 0x20 оставляет < 0xFF — контрольные байты детектируются
+/// без ложных срабатываний (в отличие от SWAR-трюка), поэтому возврат —
+/// прямая позиция остановки, без доборного побайтового прохода.
+///
+/// # Safety
+/// Вызывать только при поддержке AVX2.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn first_stop_avx2(bytes: &[u8], from: usize, a: u8, b: u8, ctrl: bool) -> usize {
+    use std::arch::x86_64::*;
+
+    let len = bytes.len();
+    let ptr = bytes.as_ptr();
+    let va = _mm256_set1_epi8(a as i8);
+    let vb = _mm256_set1_epi8(b as i8);
+    // 0x1F + 0xE0 = 0xFE < 0xFF; 0x20 + 0xE0 = 0x100 -> 0xFF (насыщение)
+    let sat = _mm256_set1_epi8(0xE0u8 as i8);
+    let ff = _mm256_set1_epi8(-1);
+    let mut i = from;
+    while i + 32 <= len {
+        let x = _mm256_loadu_si256(ptr.add(i) as *const __m256i);
+        let mut m = _mm256_movemask_epi8(_mm256_cmpeq_epi8(x, va))
+            | _mm256_movemask_epi8(_mm256_cmpeq_epi8(x, vb));
+        if ctrl {
+            let ge_0x20 = _mm256_cmpeq_epi8(_mm256_adds_epu8(x, sat), ff);
+            m |= _mm256_movemask_epi8(_mm256_xor_si256(ge_0x20, ff));
+        }
+        if m != 0 {
+            return i + m.trailing_zeros() as usize;
+        }
+        i += 32;
+    }
+    // Хвост < 32 байт — скалярно (строки у конца документа).
+    while i < len {
+        let c = *ptr.add(i);
+        if c == a || c == b || (ctrl && c < 0x20) {
+            return i;
+        }
+        i += 1;
+    }
+    len
+}
+
+/// Первый backslash или control-байт в `bytes[from..]` (для фазы 2
+/// декодера). AVX2-путь — точная позиция без добора; SWAR-фолбэк.
+fn find_bs_or_ctrl(bytes: &[u8], from: usize) -> Option<usize> {
+    let bslash_mask = swar_broadcast(b'\\');
+    // Инлайн первый чанк (8 байт) — короткие escape-фрагменты без вызова.
+    let mut j = from;
+    if j + 8 <= bytes.len() {
+        let x = u64::from_le_bytes(bytes[j..j + 8].try_into().unwrap());
+        let m = swar_has_zero(x ^ bslash_mask) | swar_has_control(x);
+        if m != 0 {
+            for k in 0..8 {
+                let c = bytes[j + k];
+                if c == b'\\' || c < 0x20 {
+                    return Some(j + k);
+                }
+            }
+        }
+        j += 8;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if avx2_available() {
+            // Safety: детекция AVX2 выполнена выше.
+            let j = unsafe { first_stop_avx2(bytes, j, b'\\', b'\\', true) };
+            return if j == bytes.len() { None } else { Some(j) };
+        }
+    }
+    // SWAR-фолбэк.
+    while j + 8 <= bytes.len() {
+        let x = u64::from_le_bytes(bytes[j..j + 8].try_into().unwrap());
+        let m = swar_has_zero(x ^ bslash_mask) | swar_has_control(x);
+        if m == 0 {
+            j += 8;
+            continue;
+        }
+        // добор: у SWAR-маски возможны ложные срабатывания
+        while j < bytes.len() {
+            let c = bytes[j];
+            if c == b'\\' || c < 0x20 {
+                return Some(j);
+            }
+            j += 1;
+        }
+    }
+    while j < bytes.len() {
+        let c = bytes[j];
+        if c == b'\\' || c < 0x20 {
+            return Some(j);
+        }
+        j += 1;
+    }
+    None
+}
+
 impl<'a> TapeParser<'a> {
     #[inline]
     fn peek(&self) -> Option<u8> {
@@ -500,12 +628,17 @@ impl<'a> TapeParser<'a> {
 
     #[inline]
     fn err_at(&self, pos: usize, kind: ErrorKind) -> Error {
-        Error { position: pos, kind }
+        Error {
+            position: pos,
+            kind,
+        }
     }
 
     #[inline]
     fn skip_ws(&mut self) {
-        if let Some(b' ' | b'\t' | b'\n' | b'\r') = self.bytes.get(self.pos) { self.skip_ws_slow() }
+        if let Some(b' ' | b'\t' | b'\n' | b'\r') = self.bytes.get(self.pos) {
+            self.skip_ws_slow()
+        }
     }
 
     fn skip_ws_slow(&mut self) {
@@ -641,7 +774,11 @@ impl<'a> TapeParser<'a> {
             if !has_exp {
                 if frac_digits == 0 {
                     // целое, включая -0.0 (семантика JSON "-0")
-                    if neg { -mf } else { mf }
+                    if neg {
+                        -mf
+                    } else {
+                        mf
+                    }
                 } else if frac_digits <= 22 {
                     sign * (mf / POW10[frac_digits as usize])
                 } else {
@@ -710,13 +847,72 @@ impl<'a> TapeParser<'a> {
         }
     }
 
-    /// SWAR-скан содержимого строки: 8 байт за итерацию ищем `"`, `\` и
-    /// control-байты. Возврат — позиция первой остановки.
+    /// Скан содержимого строки до первой остановки (`"`, `\`, control).
+    ///
+    /// Итерация 5 — трёхуровневая схема:
+    /// 1. ИНЛАЙН SWAR-чанк (8 байт): короткие строки/ключи — без единого
+    ///    вызова (#[target_feature] не инлайнится, вызов дороже скана);
+    /// 2. AVX2 (32 Б/ит, точные маски через saturating-add) для длинных;
+    /// 3. полный SWAR-цикл — фолбэк без AVX2.
     fn scan_plain(&self, start: usize) -> Result<StringScan, Error> {
         let bytes = self.bytes;
         let len = bytes.len();
         let quote_mask = swar_broadcast(b'"');
         let bslash_mask = swar_broadcast(b'\\');
+
+        // Уровень 1: первый чанк инлайн (ключи и краткие значения —
+        // основной случай в session-документах).
+        if start + 8 <= len {
+            let x = u64::from_le_bytes(bytes[start..start + 8].try_into().unwrap());
+            let m = swar_has_zero(x ^ quote_mask)
+                | swar_has_zero(x ^ bslash_mask)
+                | swar_has_control(x);
+            if m != 0 {
+                // добор в пределах чанка (у has_control бывают ложные
+                // срабатывания — тогда уходим в длинный путь)
+                for k in 0..8 {
+                    match bytes[start + k] {
+                        b'"' => return Ok(StringScan::Closed(start + k)),
+                        b'\\' => return Ok(StringScan::Escape(start + k)),
+                        c if c < 0x20 => {
+                            return Err(self.err_at(start + k, ErrorKind::ControlCharInString))
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        } else {
+            // Хвост документа < 8 байт — скалярно.
+            for (off, &c) in bytes[start..len].iter().enumerate() {
+                match c {
+                    b'"' => return Ok(StringScan::Closed(start + off)),
+                    b'\\' => return Ok(StringScan::Escape(start + off)),
+                    c if c < 0x20 => {
+                        return Err(self.err_at(start + off, ErrorKind::ControlCharInString))
+                    }
+                    _ => {}
+                }
+            }
+            return Err(self.err_at(len, ErrorKind::UnexpectedEof));
+        }
+
+        // Уровень 2: строка длиннее 8 байт — AVX2 (маски точные => прыжок
+        // на остановку без доборного прохода).
+        #[cfg(target_arch = "x86_64")]
+        if avx2_available() {
+            // Safety: детекция AVX2 выполнена выше.
+            let stop = unsafe { first_stop_avx2(bytes, start, b'"', b'\\', true) };
+            if stop == len {
+                return Err(self.err_at(stop, ErrorKind::UnexpectedEof));
+            }
+            return Ok(match bytes[stop] {
+                b'"' => StringScan::Closed(stop),
+                b'\\' => StringScan::Escape(stop),
+                _ => return Err(self.err_at(stop, ErrorKind::ControlCharInString)),
+            });
+        }
+
+        // Уровень 3: полный SWAR-скан (v0.4) — фолбэк без AVX2.
         let mut i = start;
         while i + 8 <= len {
             let x = u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap());
@@ -742,43 +938,24 @@ impl<'a> TapeParser<'a> {
 
     /// Медленный путь (v0.4, полный рерайт): вход содержит escape-последовательности.
     ///
-    /// Фаза 1: SWAR-прескан содержимого до НАСТОЯЩЕЙ закрывающей кавычки
+    /// Фаза 1: прескан содержимого до НАСТОЯЩЕЙ закрывающей кавычки
     /// (escaped `\"` пропускается по чётности backslash-ов), попутно считаем
     /// backslash-ы. Итог: точная граница строки и точная верхняя оценка
     /// ёмкости результата (len - backslashes).
     /// Фаза 2: декодирование в ОБЩИЙ owned-буфер документа (ноль аллокаций
-    /// на строку) — SWAR-чанки между escape копируются целиком.
+    /// на строку) — куски между escape копируются целиком.
     fn parse_string_slow(&mut self, start: usize) -> Result<(), Error> {
         let (close, bs_count) = self.scan_to_close(start)?;
         let raw = &self.input[start..close];
         let bytes = raw.as_bytes();
-        let bslash_mask = swar_broadcast(b'\\');
         // резерв: каждый backslash экономит минимум 1 байт
         self.owned.reserve(bytes.len().saturating_sub(bs_count));
         let owned_offset = self.owned.len();
         let mut i = 0usize;
         while i < bytes.len() {
-            // SWAR: ищем backslash или control-байт
-            let mut j = i;
-            while j + 8 <= bytes.len() {
-                let x = u64::from_le_bytes(bytes[j..j + 8].try_into().unwrap());
-                let m = swar_has_zero(x ^ bslash_mask) | swar_has_control(x);
-                if m == 0 {
-                    j += 8;
-                    continue;
-                }
-                break;
-            }
-            let mut hit = None;
-            while j < bytes.len() {
-                let c = bytes[j];
-                if c == b'\\' || c < 0x20 {
-                    hit = Some(j);
-                    break;
-                }
-                j += 1;
-            }
-            let stop = match hit {
+            // Первый backslash или control-байт: AVX2 даёт точную позицию,
+            // SWAR — доборный побайтовый проход (false positives has_control).
+            let stop = match find_bs_or_ctrl(bytes, i) {
                 Some(bs) => bs,
                 None => {
                     self.owned.push_str(&raw[i..]);
@@ -859,9 +1036,7 @@ impl<'a> TapeParser<'a> {
                         match char::from_u32(hi) {
                             Some(c) => self.owned.push(c),
                             None => {
-                                return Err(
-                                    self.err_at(start + at, ErrorKind::InvalidUnicodeEscape)
-                                )
+                                return Err(self.err_at(start + at, ErrorKind::InvalidUnicodeEscape))
                             }
                         }
                         i = at + 4;
@@ -880,16 +1055,107 @@ impl<'a> TapeParser<'a> {
         Ok(())
     }
 
-    /// SWAR-прескан содержимого строки до настоящей закрывающей кавычки.
-    /// Возвращает (позиция кавычки, число backslash-ов). Escaped `\"`
-    /// (нечётное число предшествующих backslash-ов) пропускается.
+    /// Прескан содержимого строки до НАСТОЯЩЕЙ закрывающей кавычки
+    /// (escaped `\"` по чётности backslash-ов пропускается).
+    /// Возвращает (позиция кавычки, число backslash-ов).
+    ///
+    /// Итерация 5 — та же трёхуровневая схема, что и в [`scan_plain`]:
+    /// инлайн-чанк 8 Б -> AVX2 stop-by-stop -> полный SWAR-цикл.
     fn scan_to_close(&self, from: usize) -> Result<(usize, usize), Error> {
         let bytes = self.bytes;
         let len = bytes.len();
-        let qm = swar_broadcast(b'"');
-        let bm = swar_broadcast(b'\\');
-        let mut i = from;
+        let quote_mask = swar_broadcast(b'"');
+        let bslash_mask = swar_broadcast(b'\\');
         let mut bs_count = 0usize;
+
+        // Уровень 1: инлайн-чанк (короткие escape-строки).
+        if from + 8 <= len {
+            let x = u64::from_le_bytes(bytes[from..from + 8].try_into().unwrap());
+            let m = swar_has_zero(x ^ quote_mask)
+                | swar_has_zero(x ^ bslash_mask)
+                | swar_has_control(x);
+            if m != 0 {
+                for k in 0..8 {
+                    match bytes[from + k] {
+                        b'\\' => bs_count += 1,
+                        b'"' => {
+                            // чётность backslash-ов, предшествующих кавычке
+                            let mut nb = 0usize;
+                            let mut p = from + k;
+                            while p > from && bytes[p - 1] == b'\\' {
+                                nb += 1;
+                                p -= 1;
+                            }
+                            if nb.is_multiple_of(2) {
+                                return Ok((from + k, bs_count));
+                            }
+                        }
+                        c if c < 0x20 => {
+                            return Err(self.err_at(from + k, ErrorKind::ControlCharInString))
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        } else {
+            // Хвост документа < 8 байт — скалярно.
+            for k in from..len {
+                match bytes[k] {
+                    b'\\' => bs_count += 1,
+                    b'"' => {
+                        let mut nb = 0usize;
+                        let mut p = k;
+                        while p > from && bytes[p - 1] == b'\\' {
+                            nb += 1;
+                            p -= 1;
+                        }
+                        if nb.is_multiple_of(2) {
+                            return Ok((k, bs_count));
+                        }
+                    }
+                    c if c < 0x20 => return Err(self.err_at(k, ErrorKind::ControlCharInString)),
+                    _ => {}
+                }
+            }
+            return Err(self.err_at(len, ErrorKind::UnexpectedEof));
+        }
+
+        // Уровень 2: AVX2 stop-by-stop от конца чанка (bs_count уже учтён).
+        #[cfg(target_arch = "x86_64")]
+        if avx2_available() {
+            let mut i = from + 8;
+            loop {
+                // Safety: детекция AVX2 выполнена выше.
+                let stop = unsafe { first_stop_avx2(bytes, i, b'"', b'\\', true) };
+                if stop == len {
+                    return Err(self.err_at(stop, ErrorKind::UnexpectedEof));
+                }
+                match bytes[stop] {
+                    b'\\' => {
+                        bs_count += 1;
+                        i = stop + 1;
+                    }
+                    b'"' => {
+                        let mut nb = 0usize;
+                        let mut p = stop;
+                        while p > from && bytes[p - 1] == b'\\' {
+                            nb += 1;
+                            p -= 1;
+                        }
+                        if nb.is_multiple_of(2) {
+                            return Ok((stop, bs_count));
+                        }
+                        i = stop + 1;
+                    }
+                    _ => return Err(self.err_at(stop, ErrorKind::ControlCharInString)),
+                }
+            }
+        }
+
+        // Уровень 3: полный SWAR-цикл (v0.4) от конца чанка.
+        let qm = quote_mask;
+        let bm = bslash_mask;
+        let mut i = from + 8;
         while i + 8 <= len {
             let x = u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap());
             let m = swar_has_zero(x ^ qm) | swar_has_zero(x ^ bm) | swar_has_control(x);
@@ -917,9 +1183,7 @@ impl<'a> TapeParser<'a> {
                         bs_count += 1;
                         i += 1;
                     }
-                    c if c < 0x20 => {
-                        return Err(self.err_at(i, ErrorKind::ControlCharInString))
-                    }
+                    c if c < 0x20 => return Err(self.err_at(i, ErrorKind::ControlCharInString)),
                     _ => i += 1,
                 }
             }
@@ -1211,6 +1475,58 @@ mod tests {
         parse(s).expect("should parse")
     }
 
+    /// Итерация 5: строковый скан (AVX2 32Б/ит / SWAR 8Б/ит) на всех
+    /// позициях остановки относительно границ блоков: содержимое длиной
+    /// 0..=96 — закрывающая кавычка пересекает стыки 8/16/32/64 байта.
+    #[test]
+    fn string_scan_block_boundaries() {
+        for n in 0..=96usize {
+            let s = format!("\"{}\"", "x".repeat(n));
+            assert_eq!(
+                parse_ok(&s).root().as_str(),
+                Some("x".repeat(n).as_str()),
+                "len={n}"
+            );
+        }
+        // контрольный байт на каждой позиции в первых двух блоках
+        for n in 0..=40usize {
+            let mut s = String::from("\"");
+            s.push_str(&"x".repeat(n));
+            s.push('\u{1}');
+            s.push_str(&"y\"".repeat(2));
+            assert!(parse(&s).is_err(), "ctrl at {n} must be rejected");
+        }
+    }
+
+    /// Итерация 5: экранированные кавычки и backslash-цепочки у границ
+    /// блоков — чётность в scan_to_close + decode в фазе 2. Ожидания
+    /// строит serde_json (кросс-проверка кодирования и чётности).
+    #[test]
+    fn escape_parity_block_boundaries() {
+        // backslash-цепочки всех длин + кавычка + хвост: чётность
+        // предшествующих backslash-ов определяет, закрывает ли кавычка
+        // строку; смещения 0..=48 пересекают границы блоков 8/32.
+        for n in 0..=48usize {
+            let content: String = "\\".repeat(n) + "\"tail";
+            let json = serde_json::to_string(&content).expect("encode");
+            assert_eq!(
+                parse_ok(&json).root().as_str(),
+                Some(content.as_str()),
+                "bs-chain={n}"
+            );
+        }
+        // пара \ud83d\ude00 (суррогаты) на разных смещениях + '\u0041'
+        for n in 0..=48usize {
+            let json = format!("\"{}\\ud83d\\ude00-\\u0041\"", "z".repeat(n));
+            let expected = format!("{}😀-A", "z".repeat(n));
+            assert_eq!(
+                parse_ok(&json).root().as_str(),
+                Some(expected.as_str()),
+                "surrogate pad={n}"
+            );
+        }
+    }
+
     #[test]
     fn primitives() {
         assert!(parse_ok("null").root().is_null());
@@ -1309,10 +1625,7 @@ mod tests {
             parse(r#""\ud800\u0041""#).unwrap_err().kind,
             ErrorKind::LoneSurrogate
         );
-        assert_eq!(
-            parse(r#""\q""#).unwrap_err().kind,
-            ErrorKind::InvalidEscape
-        );
+        assert_eq!(parse(r#""\q""#).unwrap_err().kind, ErrorKind::InvalidEscape);
         assert_eq!(
             parse("\"a\nb\"").unwrap_err().kind,
             ErrorKind::ControlCharInString
@@ -1347,17 +1660,11 @@ mod tests {
         match (a.kind(), b) {
             (Kind::Null, SValue::Null) => true,
             (Kind::Bool, SValue::Bool(y)) => a.as_bool() == Some(*y),
-            (Kind::Number, SValue::Number(y)) => {
-                a.as_f64() == Some(y.as_f64().unwrap_or(f64::NAN))
-            }
+            (Kind::Number, SValue::Number(y)) => a.as_f64() == Some(y.as_f64().unwrap_or(f64::NAN)),
             (Kind::Str, SValue::String(y)) => a.as_str() == Some(y.as_str()),
             (Kind::Array, SValue::Array(y)) => {
                 let arr = a.as_array().unwrap();
-                arr.len() == y.len()
-                    && arr
-                        .iter()
-                        .zip(y.iter())
-                        .all(|(n, sv)| equiv(n, sv))
+                arr.len() == y.len() && arr.iter().zip(y.iter()).all(|(n, sv)| equiv(n, sv))
             }
             (Kind::Object, SValue::Object(y)) => {
                 let obj = a.as_object().unwrap();
@@ -1377,12 +1684,44 @@ mod tests {
     #[test]
     fn numbers_match_serde_json() {
         let cases = [
-            "0", "-0", "1", "-1", "42", "9007199254740991", "9007199254740992", "9007199254740993",
-            "18446744073709551615", "-9007199254740993", "0.5", "-0.5", "0.05", "0.0001",
-            "3.141592653589793", "2.718281828459045", "123.456", "1e0", "1e1", "1e22", "1e23",
-            "1e-22", "1e-23", "-1e-22", "2.5e-3", "123.456e7", "123.456e-7", "1.5e300",
-            "0.1", "0.2", "0.3", "1.1", "-2.2", "123456.789", "1e-5", "99999999999999999999",
-            "1.7976931348623157e308", "5e-324",
+            "0",
+            "-0",
+            "1",
+            "-1",
+            "42",
+            "9007199254740991",
+            "9007199254740992",
+            "9007199254740993",
+            "18446744073709551615",
+            "-9007199254740993",
+            "0.5",
+            "-0.5",
+            "0.05",
+            "0.0001",
+            "3.141592653589793",
+            "2.718281828459045",
+            "123.456",
+            "1e0",
+            "1e1",
+            "1e22",
+            "1e23",
+            "1e-22",
+            "1e-23",
+            "-1e-22",
+            "2.5e-3",
+            "123.456e7",
+            "123.456e-7",
+            "1.5e300",
+            "0.1",
+            "0.2",
+            "0.3",
+            "1.1",
+            "-2.2",
+            "123456.789",
+            "1e-5",
+            "99999999999999999999",
+            "1.7976931348623157e308",
+            "5e-324",
         ];
         for c in cases {
             let doc = parse(c).unwrap_or_else(|e| panic!("{c}: {e}"));
@@ -1391,12 +1730,19 @@ mod tests {
             let truth: f64 = c.parse().unwrap();
             assert_eq!(a.to_bits(), truth.to_bits(), "bits mismatch vs std for {c}");
             // serde_json: допуск 1 ulp (его собственные 1-ulp отклонения)
-            let serde_v: SValue = serde_json::from_str(c)
-                .unwrap_or_else(|e| panic!("{c}: serde_json {e}"));
+            let serde_v: SValue =
+                serde_json::from_str(c).unwrap_or_else(|e| panic!("{c}: serde_json {e}"));
             let b = serde_v.as_f64().unwrap();
-            assert!(within_1ulp(a, b), "serde 1-ulp deviation exceeded for {c}: {a} vs {b}");
+            assert!(
+                within_1ulp(a, b),
+                "serde 1-ulp deviation exceeded for {c}: {a} vs {b}"
+            );
             if a == 0.0 && b == 0.0 {
-                assert_eq!(a.is_sign_negative(), b.is_sign_negative(), "sign of zero for {c}");
+                assert_eq!(
+                    a.is_sign_negative(),
+                    b.is_sign_negative(),
+                    "sign of zero for {c}"
+                );
             }
         }
     }
@@ -1465,7 +1811,10 @@ mod tests {
             // serde_json — с допуском 1 ulp
             let serde_v: SValue = serde_json::from_str(&s).unwrap();
             let b = serde_v.as_f64().unwrap();
-            assert!(within_1ulp(a, b), "serde 1-ulp deviation exceeded for {s}: {a} vs {b}");
+            assert!(
+                within_1ulp(a, b),
+                "serde 1-ulp deviation exceeded for {s}: {a} vs {b}"
+            );
         }
     }
 

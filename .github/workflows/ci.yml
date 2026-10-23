@@ -21,13 +21,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: rustfmt (advisory на старте проекта)
+      # итерация 5: код вычищен, оба чека теперь строгие
+      - name: rustfmt (strict)
         run: cargo fmt --all -- --check
-        continue-on-error: true
 
-      - name: clippy (advisory на старте проекта)
-        run: cargo clippy --workspace --all-targets
-        continue-on-error: true
+      - name: clippy (strict, -D warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: tests
         run: cargo test --workspace

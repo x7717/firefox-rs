@@ -452,7 +452,10 @@ mod tests {
         assert_eq!(find_substring_str("абвгд", "вг"), Some(4));
         assert_eq!(find_substring_str("Firefox", "Fox"), None);
         assert_eq!(find_substring_str("abc", ""), Some(0));
-        assert_eq!(find_substring_str("https://example.com/x", "example.com"), Some(8));
+        assert_eq!(
+            find_substring_str("https://example.com/x", "example.com"),
+            Some(8)
+        );
         assert_eq!(find_two_bytes(b"a\nb", b'\\', b'n'), None);
         assert_eq!(find_two_bytes(b"a\\nb", b'\\', b'n'), Some(1));
         assert_eq!(find_two_bytes(b"text\\r\\n", b'\\', b'n'), Some(6));
