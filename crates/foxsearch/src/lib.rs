@@ -1,11 +1,13 @@
 //! FoxSearch — векторизованный поиск байтов и подстрок для горячих путей
 //! Firefox (URL classifier, findbar, строковые операции).
 //!
-//! Иерархия движков (итерация 3):
-//! 1. **AVX2** (runtime-detected, x86_64): скан 32 байта за итерацию через
-//!    `cmpeq`+`movemask`, хвост — перекрывающийся финальный блок;
-//! 2. **SWAR** (портабельный фолбэк): 8 байт за итерацию битовыми трюками;
-//! 3. скалярный хвост для коротких срезов.
+//! Иерархия движков (итерация 5):
+//! 1. **AVX-512** (runtime-detected, x86_64): скан 64 байта за итерацию —
+//!    один `cmpeq` с mask-регистром вместо movemask;
+//! 2. **AVX2** (runtime-detected): 64 байта за итерацию двумя 256-битными
+//!    векторами (cmpeq+cmpeq+or+movemask), хвост — перекрывающийся блок;
+//! 3. **SWAR** (портабельный фолбэк): 8 байт за итерацию битовыми трюками;
+//! 4. скалярный хвост для коротких срезов.
 //!
 //! Поверх скана — memmem-стратегия: фильтрующий байт иглы выбирается по
 //! таблице РЕДКОСТИ (`pick_filter_byte`), кандидаты проходят два дешёвых
@@ -143,6 +145,8 @@ fn broadcast(b: u8) -> u64 {
 const SIMD_NONE: u8 = 0;
 #[cfg(target_arch = "x86_64")]
 const SIMD_AVX2: u8 = 2;
+#[cfg(target_arch = "x86_64")]
+const SIMD_AVX512: u8 = 3;
 
 #[cfg(target_arch = "x86_64")]
 static SIMD_LEVEL: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
@@ -151,7 +155,12 @@ static SIMD_LEVEL: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
 #[inline]
 fn simd_level() -> u8 {
     *SIMD_LEVEL.get_or_init(|| {
-        if std::arch::is_x86_feature_detected!("avx2") {
+        // avx512bw нужен для побайтовых сравнений с mask-регистром
+        if std::arch::is_x86_feature_detected!("avx512f")
+            && std::arch::is_x86_feature_detected!("avx512bw")
+        {
+            SIMD_AVX512
+        } else if std::arch::is_x86_feature_detected!("avx2") {
             SIMD_AVX2
         } else {
             SIMD_NONE
@@ -184,10 +193,48 @@ fn find_byte_swar(haystack: &[u8], needle: u8) -> Option<usize> {
         .map(|p| i + p)
 }
 
-/// AVX2-ядро: 32 байта за итерацию. Для len < 32 — SWAR-фолбэк.
+/// AVX-512-ядро: 64 байта за итерацию — cmpeq сразу в mask-регистр,
+/// movemask и OR векторов не нужны. Для len < 64 — AVX2/SWAR-фолбэк.
 ///
 /// # Safety
-/// Вызывать только при поддержке AVX2 (`simd_level() == SIMD_AVX2`).
+/// Вызывать только при поддержке AVX-512 (simd_level() == SIMD_AVX512).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512bw")]
+unsafe fn find_byte_avx512(haystack: &[u8], needle: u8) -> Option<usize> {
+    use std::arch::x86_64::*;
+
+    let len = haystack.len();
+    if len < 64 {
+        return find_byte_avx2(haystack, needle);
+    }
+    let ptr = haystack.as_ptr();
+    let n = _mm512_set1_epi8(needle as i8);
+    let mut i = 0usize;
+    while i + 64 <= len {
+        let chunk = _mm512_loadu_si512(ptr.add(i) as *const __m512i);
+        let m = _mm512_cmpeq_epi8_mask(chunk, n);
+        if m != 0 {
+            return Some(i + m.trailing_zeros() as usize);
+        }
+        i += 64;
+    }
+    // Хвост: перекрывающийся финальный блок [len-64, len) — все байты < i
+    // уже проверены, дубликатов и ложных позиций нет.
+    debug_assert!(len >= 64);
+    let chunk = _mm512_loadu_si512(ptr.add(len - 64) as *const __m512i);
+    let m = _mm512_cmpeq_epi8_mask(chunk, n);
+    if m != 0 {
+        return Some(len - 64 + m.trailing_zeros() as usize);
+    }
+    None
+}
+
+/// AVX2-ядро: 64 байта за итерацию двумя 256-битными векторами
+/// (итерация 5: было 32 — лишний проход цикла на блок). Для len < 64 —
+/// прежняя одновекторная схема/SWAR.
+///
+/// # Safety
+/// Вызывать только при поддержке AVX2 (`simd_level() >= SIMD_AVX2`).
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn find_byte_avx2(haystack: &[u8], needle: u8) -> Option<usize> {
@@ -200,7 +247,22 @@ unsafe fn find_byte_avx2(haystack: &[u8], needle: u8) -> Option<usize> {
     let ptr = haystack.as_ptr();
     let n = _mm256_set1_epi8(needle as i8);
     let mut i = 0usize;
-    while i + 32 <= len {
+    // Основной цикл: 64 байта двумя векторами.
+    while i + 64 <= len {
+        let a = _mm256_loadu_si256(ptr.add(i) as *const __m256i);
+        let b = _mm256_loadu_si256(ptr.add(i + 32) as *const __m256i);
+        let ma = _mm256_movemask_epi8(_mm256_cmpeq_epi8(a, n));
+        let mb = _mm256_movemask_epi8(_mm256_cmpeq_epi8(b, n));
+        // movemask — i32: бит 31 установлен => знак. Приведение через u32,
+        // иначе знакорасширение портит старшую половину маски.
+        let m = (mb as u32 as u64) << 32 | ma as u32 as u64;
+        if m != 0 {
+            return Some(i + m.trailing_zeros() as usize);
+        }
+        i += 64;
+    }
+    // Остаток >= 32: одновекторный блок [i, i+32).
+    if i + 32 <= len {
         let chunk = _mm256_loadu_si256(ptr.add(i) as *const __m256i);
         let m = _mm256_movemask_epi8(_mm256_cmpeq_epi8(chunk, n));
         if m != 0 {
@@ -209,24 +271,35 @@ unsafe fn find_byte_avx2(haystack: &[u8], needle: u8) -> Option<usize> {
         i += 32;
     }
     // Хвост: перекрывающийся финальный блок [len-32, len). Все байты < i уже
-    // проверены основным циклом, так что первое совпадение в этом блоке,
-    // если оно есть, лежит в [i, len) — дубликатов и ложных позиций нет.
-    debug_assert!(len >= 32);
-    let chunk = _mm256_loadu_si256(ptr.add(len - 32) as *const __m256i);
-    let m = _mm256_movemask_epi8(_mm256_cmpeq_epi8(chunk, n));
-    if m != 0 {
-        return Some(len - 32 + m.trailing_zeros() as usize);
+    // проверены (в них совпадений нет), так что первое срабатывание маски в
+    // этом блоке лежит в [i, len) — дубликатов и ложных позиций нет.
+    // К этому моменту len - i < 32, т.е. блок покрывает весь остаток.
+    if i < len {
+        debug_assert!(len >= 32);
+        let chunk = _mm256_loadu_si256(ptr.add(len - 32) as *const __m256i);
+        let m = _mm256_movemask_epi8(_mm256_cmpeq_epi8(chunk, n));
+        if m != 0 {
+            return Some(len - 32 + m.trailing_zeros() as usize);
+        }
     }
     None
 }
 
-/// Первый индекс `needle` в `haystack`. Выбор ядра — runtime, один раз.
+/// Первый индекс `needle` в `haystack`. Выбор ядра — runtime, один раз:
+/// AVX-512 (64 Б/ит) → AVX2 (64 Б/ит двумя векторами) → SWAR (8 Б/ит).
 pub fn find_byte(haystack: &[u8], needle: u8) -> Option<usize> {
     #[cfg(target_arch = "x86_64")]
     {
-        if simd_level() == SIMD_AVX2 {
-            // Safety: детекция AVX2 выполнена выше.
-            return unsafe { find_byte_avx2(haystack, needle) };
+        match simd_level() {
+            SIMD_AVX512 => {
+                // Safety: детекция AVX-512 (f+bw) выполнена выше.
+                return unsafe { find_byte_avx512(haystack, needle) };
+            }
+            SIMD_AVX2 => {
+                // Safety: детекция AVX2 выполнена выше.
+                return unsafe { find_byte_avx2(haystack, needle) };
+            }
+            _ => {}
         }
     }
     find_byte_swar(haystack, needle)
@@ -398,8 +471,9 @@ mod tests {
 
     #[test]
     fn find_byte_lengths_edge() {
-        // границы переключения ядер: 0..64 байта
-        for len in 0..=64 {
+        // границы переключения ядер: 0..200 (SWAR<32, AVX2: 32/64,
+        // AVX-512: 64/128 — все стыки блоков и хвостов)
+        for len in 0..=200 {
             let hay = vec![b'x'; len];
             for needle in *b"xy" {
                 let expected = hay.iter().position(|&b| b == needle);
