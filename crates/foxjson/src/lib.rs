@@ -558,20 +558,24 @@ unsafe fn first_stop_avx2(bytes: &[u8], from: usize, a: u8, b: u8, ctrl: bool) -
     len
 }
 
-/// Первый backslash или control-байт в `bytes[from..]` (для фазы 2
-/// декодера). AVX2-путь — точная позиция без добора; SWAR-фолбэк.
-fn find_bs_or_ctrl(bytes: &[u8], from: usize) -> Option<usize> {
-    let bslash_mask = swar_broadcast(b'\\');
+/// Первый `\`, `"` или control-байт в `bytes[from..]` — остановка скана
+/// содержимого строки (v0.7, однопроходный декодер). Возвращает
+/// `bytes.len()`, если остановки нет.
+/// AVX2-путь — точная позиция без добора; SWAR-фолбэк.
+fn find_str_stop(bytes: &[u8], from: usize) -> usize {
+    let len = bytes.len();
+    let bs_mask = swar_broadcast(b'\\');
+    let q_mask = swar_broadcast(b'"');
     // Инлайн первый чанк (8 байт) — короткие escape-фрагменты без вызова.
     let mut j = from;
-    if j + 8 <= bytes.len() {
+    if j + 8 <= len {
         let x = u64::from_le_bytes(bytes[j..j + 8].try_into().unwrap());
-        let m = swar_has_zero(x ^ bslash_mask) | swar_has_control(x);
+        let m = swar_has_zero(x ^ bs_mask) | swar_has_zero(x ^ q_mask) | swar_has_control(x);
         if m != 0 {
             for k in 0..8 {
                 let c = bytes[j + k];
-                if c == b'\\' || c < 0x20 {
-                    return Some(j + k);
+                if c == b'\\' || c == b'"' || c < 0x20 {
+                    return j + k;
                 }
             }
         }
@@ -581,35 +585,34 @@ fn find_bs_or_ctrl(bytes: &[u8], from: usize) -> Option<usize> {
     {
         if avx2_available() {
             // Safety: детекция AVX2 выполнена выше.
-            let j = unsafe { first_stop_avx2(bytes, j, b'\\', b'\\', true) };
-            return if j == bytes.len() { None } else { Some(j) };
+            return unsafe { first_stop_avx2(bytes, j, b'\\', b'"', true) };
         }
     }
-    // SWAR-фолбэк.
-    while j + 8 <= bytes.len() {
+    // SWAR-фолбэк (без AVX2).
+    while j + 8 <= len {
         let x = u64::from_le_bytes(bytes[j..j + 8].try_into().unwrap());
-        let m = swar_has_zero(x ^ bslash_mask) | swar_has_control(x);
+        let m = swar_has_zero(x ^ bs_mask) | swar_has_zero(x ^ q_mask) | swar_has_control(x);
         if m == 0 {
             j += 8;
             continue;
         }
         // добор: у SWAR-маски возможны ложные срабатывания
-        while j < bytes.len() {
+        while j < len {
             let c = bytes[j];
-            if c == b'\\' || c < 0x20 {
-                return Some(j);
+            if c == b'\\' || c == b'"' || c < 0x20 {
+                return j;
             }
             j += 1;
         }
     }
-    while j < bytes.len() {
+    while j < len {
         let c = bytes[j];
-        if c == b'\\' || c < 0x20 {
-            return Some(j);
+        if c == b'\\' || c == b'"' || c < 0x20 {
+            return j;
         }
         j += 1;
     }
-    None
+    len
 }
 
 impl<'a> TapeParser<'a> {
@@ -936,281 +939,115 @@ impl<'a> TapeParser<'a> {
         Err(self.err_at(len, ErrorKind::UnexpectedEof))
     }
 
-    /// Медленный путь (v0.4, полный рерайт): вход содержит escape-последовательности.
+    /// Медленный путь (v0.7, ОДИН проход): вход содержит escape-последовательности.
     ///
-    /// Фаза 1: прескан содержимого до НАСТОЯЩЕЙ закрывающей кавычки
-    /// (escaped `\"` пропускается по чётности backslash-ов), попутно считаем
-    /// backslash-ы. Итог: точная граница строки и точная верхняя оценка
-    /// ёмкости результата (len - backslashes).
-    /// Фаза 2: декодирование в ОБЩИЙ owned-буфер документа (ноль аллокаций
-    /// на строку) — куски между escape копируются целиком.
+    /// Ключевое наблюдение: кавычка, на которой остановился скан, ВСЕГДА
+    /// настоящая граница строки. Экранированная кавычка (`\"`) остановкой
+    /// быть не может — скан останавливается раньше, на её backslash, после
+    /// чего кавычка декодируется как escape и проход продолжается. Поэтому
+    /// прескан с подсчётом чётности backslash-ов (v0.4-v0.6, scan_to_close)
+    /// не нужен вовсе: содержимое сканируется и декодируется ЗА ОДИН проход
+    /// (было два: прескан + декод), и каждая остановка — один вызов
+    /// [`find_str_stop`] вместо цепочки scan_to_close(AVX2) + find_bs_or_ctrl.
+    ///
+    /// Резерв owned: декод никогда не длиннее raw-содержимого
+    /// (`\uXXXX` -> до 4 байт из 6, пары суррогатов -> до 4 из 12), поэтому
+    /// остаток входа — точная верхняя граница; кламп 64 КиБ — гигантские
+    /// строки растут геометрически (амортизированно, без экспоненты реаллоков).
+    ///
+    /// ВАЖНО (урок итерации 6): эта функция ДОЛЖНА быть #[inline(never)].
+    /// Без атрибута LLVM встраивает её в `parse_string`, раздувая последний
+    /// до отказа от инлайна в parse_object/parse_array — и каждый КЛЮЧ
+    /// объекта начинает платить вызов функции: nums-5000 +9%, small +13%
+    /// (замерено A/B против v0.6-базлайна, criterion, та же машина).
+    /// Граница инлайна — часть архитектуры горячих путей, не мелочь.
+    #[inline(never)]
     fn parse_string_slow(&mut self, start: usize) -> Result<(), Error> {
-        let (close, bs_count) = self.scan_to_close(start)?;
-        let raw = &self.input[start..close];
-        let bytes = raw.as_bytes();
-        // резерв: каждый backslash экономит минимум 1 байт
-        self.owned.reserve(bytes.len().saturating_sub(bs_count));
+        let bytes = self.bytes;
+        let len = bytes.len();
+        self.owned.reserve((len - start).min(1 << 16));
         let owned_offset = self.owned.len();
-        let mut i = 0usize;
-        while i < bytes.len() {
-            // Первый backslash или control-байт: AVX2 даёт точную позицию,
+        let mut i = start;
+        loop {
+            // Остановка: `\`, `"` или control; AVX2 — точная позиция,
             // SWAR — доборный побайтовый проход (false positives has_control).
-            let stop = match find_bs_or_ctrl(bytes, i) {
-                Some(bs) => bs,
-                None => {
-                    self.owned.push_str(&raw[i..]);
-                    break;
+            let stop = find_str_stop(bytes, i);
+            if stop == len {
+                return Err(self.err_at(len, ErrorKind::UnexpectedEof));
+            }
+            let c = bytes[stop];
+            if c == b'"' {
+                // настоящая закрывающая кавычка — строка готова
+                if stop > i {
+                    self.owned.push_str(&self.input[i..stop]);
                 }
-            };
-            if bytes[stop] < 0x20 {
-                return Err(self.err_at(start + stop, ErrorKind::ControlCharInString));
+                let l = self.owned.len() - owned_offset;
+                self.pos = stop + 1;
+                self.tape.push(Node {
+                    hdr: TAG_STR, // owned
+                    a: owned_offset as u32,
+                    b: l as u32,
+                });
+                return Ok(());
             }
+            if c < 0x20 {
+                return Err(self.err_at(stop, ErrorKind::ControlCharInString));
+            }
+            // backslash: кусок до него — в owned, дальше декод escape
             if stop > i {
-                self.owned.push_str(&raw[i..stop]);
+                self.owned.push_str(&self.input[i..stop]);
             }
-            // декодируем escape: bytes[stop] == '\\'
             let e = match bytes.get(stop + 1) {
                 Some(&e) => e,
-                None => return Err(self.err_at(self.bytes.len(), ErrorKind::UnexpectedEof)),
+                None => return Err(self.err_at(len, ErrorKind::UnexpectedEof)),
             };
+            i = stop + 2;
             match e {
-                b'"' => {
-                    self.owned.push('"');
-                    i = stop + 2;
-                }
-                b'\\' => {
-                    self.owned.push('\\');
-                    i = stop + 2;
-                }
-                b'/' => {
-                    self.owned.push('/');
-                    i = stop + 2;
-                }
-                b'b' => {
-                    self.owned.push('\u{0008}');
-                    i = stop + 2;
-                }
-                b'f' => {
-                    self.owned.push('\u{000C}');
-                    i = stop + 2;
-                }
-                b'n' => {
-                    self.owned.push('\n');
-                    i = stop + 2;
-                }
-                b'r' => {
-                    self.owned.push('\r');
-                    i = stop + 2;
-                }
-                b't' => {
-                    self.owned.push('\t');
-                    i = stop + 2;
-                }
+                b'"' => self.owned.push('"'),
+                b'\\' => self.owned.push('\\'),
+                b'/' => self.owned.push('/'),
+                b'b' => self.owned.push('\u{0008}'),
+                b'f' => self.owned.push('\u{000C}'),
+                b'n' => self.owned.push('\n'),
+                b'r' => self.owned.push('\r'),
+                b't' => self.owned.push('\t'),
                 b'u' => {
                     let at = stop + 2;
                     let hi = hex4(bytes, at)
-                        .ok_or_else(|| self.err_at(start + at, ErrorKind::InvalidUnicodeEscape))?;
+                        .ok_or_else(|| self.err_at(at, ErrorKind::InvalidUnicodeEscape))?;
                     if (0xD800..0xDC00).contains(&hi) {
                         // старший суррогат: ожидаем \uYYYY младший суррогат
                         if bytes.get(at + 4) == Some(&b'\\') && bytes.get(at + 5) == Some(&b'u') {
                             let lo_at = at + 6;
                             let lo = hex4(bytes, lo_at).ok_or_else(|| {
-                                self.err_at(start + lo_at, ErrorKind::InvalidUnicodeEscape)
+                                self.err_at(lo_at, ErrorKind::InvalidUnicodeEscape)
                             })?;
                             if (0xDC00..0xE000).contains(&lo) {
                                 let c = 0x1_0000 + ((hi - 0xD800) << 10) + (lo - 0xDC00);
                                 let ch = char::from_u32(c).ok_or_else(|| {
-                                    self.err_at(start + at, ErrorKind::InvalidUnicodeEscape)
+                                    self.err_at(at, ErrorKind::InvalidUnicodeEscape)
                                 })?;
                                 self.owned.push(ch);
                                 i = lo_at + 4;
                             } else {
-                                return Err(self.err_at(start + at, ErrorKind::LoneSurrogate));
+                                return Err(self.err_at(at, ErrorKind::LoneSurrogate));
                             }
                         } else {
-                            return Err(self.err_at(start + at, ErrorKind::LoneSurrogate));
+                            return Err(self.err_at(at, ErrorKind::LoneSurrogate));
                         }
                     } else if (0xDC00..0xE000).contains(&hi) {
-                        return Err(self.err_at(start + at, ErrorKind::LoneSurrogate));
+                        return Err(self.err_at(at, ErrorKind::LoneSurrogate));
                     } else {
                         match char::from_u32(hi) {
                             Some(c) => self.owned.push(c),
-                            None => {
-                                return Err(self.err_at(start + at, ErrorKind::InvalidUnicodeEscape))
-                            }
+                            None => return Err(self.err_at(at, ErrorKind::InvalidUnicodeEscape)),
                         }
                         i = at + 4;
                     }
                 }
-                _ => return Err(self.err_at(start + stop, ErrorKind::InvalidEscape)),
+                _ => return Err(self.err_at(stop, ErrorKind::InvalidEscape)),
             }
         }
-        let len = self.owned.len() - owned_offset;
-        self.pos = close + 1;
-        self.tape.push(Node {
-            hdr: TAG_STR, // owned
-            a: owned_offset as u32,
-            b: len as u32,
-        });
-        Ok(())
-    }
-
-    /// Прескан содержимого строки до НАСТОЯЩЕЙ закрывающей кавычки
-    /// (escaped `\"` по чётности backslash-ов пропускается).
-    /// Возвращает (позиция кавычки, число backslash-ов).
-    ///
-    /// Итерация 5 — та же трёхуровневая схема, что и в [`scan_plain`]:
-    /// инлайн-чанк 8 Б -> AVX2 stop-by-stop -> полный SWAR-цикл.
-    fn scan_to_close(&self, from: usize) -> Result<(usize, usize), Error> {
-        let bytes = self.bytes;
-        let len = bytes.len();
-        let quote_mask = swar_broadcast(b'"');
-        let bslash_mask = swar_broadcast(b'\\');
-        let mut bs_count = 0usize;
-
-        // Уровень 1: инлайн-чанк (короткие escape-строки).
-        if from + 8 <= len {
-            let x = u64::from_le_bytes(bytes[from..from + 8].try_into().unwrap());
-            let m = swar_has_zero(x ^ quote_mask)
-                | swar_has_zero(x ^ bslash_mask)
-                | swar_has_control(x);
-            if m != 0 {
-                for k in 0..8 {
-                    match bytes[from + k] {
-                        b'\\' => bs_count += 1,
-                        b'"' => {
-                            // чётность backslash-ов, предшествующих кавычке
-                            let mut nb = 0usize;
-                            let mut p = from + k;
-                            while p > from && bytes[p - 1] == b'\\' {
-                                nb += 1;
-                                p -= 1;
-                            }
-                            if nb.is_multiple_of(2) {
-                                return Ok((from + k, bs_count));
-                            }
-                        }
-                        c if c < 0x20 => {
-                            return Err(self.err_at(from + k, ErrorKind::ControlCharInString))
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        } else {
-            // Хвост документа < 8 байт — скалярно.
-            for k in from..len {
-                match bytes[k] {
-                    b'\\' => bs_count += 1,
-                    b'"' => {
-                        let mut nb = 0usize;
-                        let mut p = k;
-                        while p > from && bytes[p - 1] == b'\\' {
-                            nb += 1;
-                            p -= 1;
-                        }
-                        if nb.is_multiple_of(2) {
-                            return Ok((k, bs_count));
-                        }
-                    }
-                    c if c < 0x20 => return Err(self.err_at(k, ErrorKind::ControlCharInString)),
-                    _ => {}
-                }
-            }
-            return Err(self.err_at(len, ErrorKind::UnexpectedEof));
-        }
-
-        // Уровень 2: AVX2 stop-by-stop от конца чанка (bs_count уже учтён).
-        #[cfg(target_arch = "x86_64")]
-        if avx2_available() {
-            let mut i = from + 8;
-            loop {
-                // Safety: детекция AVX2 выполнена выше.
-                let stop = unsafe { first_stop_avx2(bytes, i, b'"', b'\\', true) };
-                if stop == len {
-                    return Err(self.err_at(stop, ErrorKind::UnexpectedEof));
-                }
-                match bytes[stop] {
-                    b'\\' => {
-                        bs_count += 1;
-                        i = stop + 1;
-                    }
-                    b'"' => {
-                        let mut nb = 0usize;
-                        let mut p = stop;
-                        while p > from && bytes[p - 1] == b'\\' {
-                            nb += 1;
-                            p -= 1;
-                        }
-                        if nb.is_multiple_of(2) {
-                            return Ok((stop, bs_count));
-                        }
-                        i = stop + 1;
-                    }
-                    _ => return Err(self.err_at(stop, ErrorKind::ControlCharInString)),
-                }
-            }
-        }
-
-        // Уровень 3: полный SWAR-цикл (v0.4) от конца чанка.
-        let qm = quote_mask;
-        let bm = bslash_mask;
-        let mut i = from + 8;
-        while i + 8 <= len {
-            let x = u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap());
-            let m = swar_has_zero(x ^ qm) | swar_has_zero(x ^ bm) | swar_has_control(x);
-            if m == 0 {
-                i += 8;
-                continue;
-            }
-            let stop = (i + 8).min(len);
-            while i < stop {
-                match bytes[i] {
-                    b'"' => {
-                        // экранирована ли? — чётность предшествующих backslash-ов
-                        let mut k = i;
-                        let mut nb = 0usize;
-                        while k > from && bytes[k - 1] == b'\\' {
-                            nb += 1;
-                            k -= 1;
-                        }
-                        if nb.is_multiple_of(2) {
-                            return Ok((i, bs_count));
-                        }
-                        i += 1;
-                    }
-                    b'\\' => {
-                        bs_count += 1;
-                        i += 1;
-                    }
-                    c if c < 0x20 => return Err(self.err_at(i, ErrorKind::ControlCharInString)),
-                    _ => i += 1,
-                }
-            }
-        }
-        while i < len {
-            match bytes[i] {
-                b'"' => {
-                    let mut k = i;
-                    let mut nb = 0usize;
-                    while k > from && bytes[k - 1] == b'\\' {
-                        nb += 1;
-                        k -= 1;
-                    }
-                    if nb.is_multiple_of(2) {
-                        return Ok((i, bs_count));
-                    }
-                    i += 1;
-                }
-                b'\\' => {
-                    bs_count += 1;
-                    i += 1;
-                }
-                c if c < 0x20 => return Err(self.err_at(i, ErrorKind::ControlCharInString)),
-                _ => i += 1,
-            }
-        }
-        Err(self.err_at(len, ErrorKind::UnexpectedEof))
     }
 
     fn parse_array(&mut self) -> Result<(), Error> {
@@ -1498,9 +1335,9 @@ mod tests {
         }
     }
 
-    /// Итерация 5: экранированные кавычки и backslash-цепочки у границ
-    /// блоков — чётность в scan_to_close + decode в фазе 2. Ожидания
-    /// строит serde_json (кросс-проверка кодирования и чётности).
+    /// Итерация 5/7: экранированные кавычки и backslash-цепочки у границ
+    /// блоков — однопроходный декод (v0.7: остановка на `\`/`"`/control).
+    /// Ожидания строит serde_json (кросс-проверка кодирования и чётности).
     #[test]
     fn escape_parity_block_boundaries() {
         // backslash-цепочки всех длин + кавычка + хвост: чётность

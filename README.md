@@ -4,18 +4,19 @@
 Каждое изменение доказывается числами: benchmark до/после + профилирование.
 Оптимизируем то, что профиль показывает самым тяжёлым.
 
-## Текущие результаты (итерация 4, тап-парсер + AVX2-скан)
+## Текущие результаты (итерация 6, однопроходный декодер escape-строк)
 
 | Крейт | Бенчмарк | Эталон | Итог |
 |---|---|---|---|
-| foxjson | parse/session-5000 (1.3 МБ) | serde_json | **5.3x быстрее** (1.65 ms vs 8.73 ms, 795 MiB/s) |
-| foxjson | parse/nums-5000 | serde_json | **7.0x быстрее** |
-| foxjson | parse/strs-5000 | serde_json | **5.5x быстрее** |
-| foxjson | parse/small | serde_json | **5.1x быстрее** |
+| foxjson | parse/session-5000 (1.3 МБ) | serde_json | **7.6x быстрее** (1.18 ms vs ~9 ms, 1.08 GiB/s) |
+| foxjson | parse/nums-5000 | serde_json | **7.9x быстрее** |
+| foxjson | parse/strs-5000 | serde_json | **6.2x быстрее** |
+| foxjson | parse/session-500 | serde_json | **5.8x быстрее** |
+| foxjson | parse/small | serde_json | **5.4x быстрее** |
 | foxsearch | find/"Mozilla Corporation" | std::str::find | **1.9x быстрее** |
 | foxsearch | find/"zzz-absent-zzz" | std::str::find | **2.7x быстрее** |
 
-История session-5000: 6.05 ms (дерево, v0.1) -> 1.65 ms (тап, v0.5) — **3.7x за жизнь проекта**.
+История session-5000: 6.05 ms (дерево, v0.1) -> 1.65 ms (тап, v0.5) -> 1.34 ms (v0.6) -> **1.18 ms (v0.7)** — **5.1x за жизнь проекта**.
 Числа корректно округлены: foxjson бит-в-бит совпадает со `std str::parse` (точнее serde_json на 1 ulp).
 Все детали и история итераций — в [WORKLOG.md](WORKLOG.md).
 

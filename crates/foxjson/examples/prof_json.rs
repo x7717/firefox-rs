@@ -5,7 +5,8 @@
 //! - `FOX_PROF_TABS`  — размер документа (вкладок), по умолчанию 5000;
 //! - `FOX_PROF_ITERS` — итераций под профайлером, по умолчанию 300;
 //! - `FOX_PROF_OUT`   — файл с сырыми адресами, по умолчанию /tmp/foxjson.prof;
-//! - `FOX_PROF_US`    — интервал сэмплирования (мкс CPU), по умолчанию 250.
+//! - `FOX_PROF_US`    — интервал сэмплирования (мкс CPU), по умолчанию 250;
+//! - `FOX_PROF_DOC`   — workload: session | nums | strs (по умолчанию session).
 
 #[path = "../../../tools/sampler.rs"]
 mod sampler;
@@ -27,7 +28,14 @@ fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(250);
 
-    let doc = sample::session(tabs);
+    let doc = match std::env::var("FOX_PROF_DOC")
+        .unwrap_or_else(|_| "session".into())
+        .as_str()
+    {
+        "nums" => sample::nums(tabs),
+        "strs" => sample::strs(tabs),
+        _ => sample::session(tabs),
+    };
 
     // Прогрев (аллокации, кэши, AVX2-детекция) вне профайлера.
     for _ in 0..20 {
