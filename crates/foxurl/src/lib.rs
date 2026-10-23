@@ -316,20 +316,8 @@ impl<'a> Url<'a> {
 
         // --- путь/запрос/фрагмент
         self.parse_path_query_fragment(i)?;
-
-        // Детекция dot-сегментов/обратных слэшей: пост-скан пути (символы,
-        // из которых могут состоять dot-формы). Ложные срабатывания безвредны:
-        // нормализация идемпотентна.
-        if self.has_authority {
-            let (ps, pe) = (self.path.0 as usize, self.path.1 as usize);
-            let path = &self.raw.as_bytes()[ps..pe];
-            let has_dot_char = path
-                .iter()
-                .any(|&c| c == b'.' || c == b'%' || (special && c == b'\\'));
-            if has_dot_char {
-                self.flags |= F_PATH_NORM;
-            }
-        }
+        // Детекция dot-сегментов/обратных слэшей слита в скан пути
+        // (parse_path_query_fragment) — отдельный проход удалён.
         Ok(())
     }
 
@@ -514,6 +502,14 @@ impl<'a> Url<'a> {
                 c if special && c == b'\\' => {
                     self.flags |= F_PATH_NORM;
                 }
+                b'.' | b'%' => {
+                    // '.' и '%' — символы dot-форм (".", "..", "%2e"):
+                    // детекция слита со сканом пути (был отдельный проход
+                    // после разбора). Ложные срабатывания безвредны:
+                    // нормализация идемпотентна; флаг читается только
+                    // у спец-схем, поэтому для opaque-путей не влияет.
+                    self.flags |= F_PATH_NORM;
+                }
                 c => {
                     if path_needs_enc(c) {
                         self.flags |= F_PATH_ENC;
@@ -681,28 +677,33 @@ fn percent_decode(bytes: &[u8]) -> Option<Vec<u8>> {
 /// Ends-in-a-number (WHATWG): последний непустой элемент — число
 /// (десятичное / hex 0x / octal с ведущим нулём).
 fn ends_in_a_number(host: &[u8]) -> bool {
-    let mut parts: Vec<&[u8]> = host.split(|&c| c == b'.').collect();
-    if parts.len() >= 2 && parts.last().is_some_and(|s| s.is_empty()) {
-        parts.pop();
+    // Последняя непустая часть (хвостовая '.' удаляет ОДНУ пустую часть) —
+    // БЕЗ Vec<&[u8]>: скан с конца. Прежний split().collect() аллоцировал
+    // Vec на КАЖДОМ доменном URL (3.3% профиля + давление malloc).
+    let mut end = host.len();
+    if end >= 2 && host[end - 1] == b'.' {
+        end -= 1;
     }
-    match parts.last() {
-        None => false,
-        Some(last) => {
-            if last.is_empty() {
-                return false;
-            }
-            if last.iter().all(|c| c.is_ascii_digit()) {
-                return true;
-            }
-            if last.len() >= 2 && (last[..2] == *b"0x" || last[..2] == *b"0X") {
-                return last[2..].iter().all(|c| c.is_ascii_hexdigit());
-            }
-            if last.len() >= 2 && last[0] == b'0' {
-                return last[1..].iter().all(|c| c.is_ascii_digit());
-            }
-            false
-        }
+    if end == 0 {
+        return false; // "" / "." — частей не осталось
     }
+    let last = match host[..end].iter().rposition(|&c| c == b'.') {
+        Some(i) => &host[i + 1..end],
+        None => host[..end].as_ref(),
+    };
+    if last.is_empty() {
+        return false;
+    }
+    if last.iter().all(|c| c.is_ascii_digit()) {
+        return true;
+    }
+    if last.len() >= 2 && (last[..2] == *b"0x" || last[..2] == *b"0X") {
+        return last[2..].iter().all(|c| c.is_ascii_hexdigit());
+    }
+    if last.len() >= 2 && last[0] == b'0' {
+        return last[1..].iter().all(|c| c.is_ascii_digit());
+    }
+    false
 }
 
 /// IPv4-парсер WHATWG: 1-4 части (dec/hex/octal), сериализация a.b.c.d.
@@ -846,9 +847,8 @@ impl<'a> Url<'a> {
                 if path.is_empty() {
                     out.push('/');
                 } else if self.flags & (F_PATH_NORM | F_PATH_ENC) != 0 {
-                    let mut buf = String::new();
-                    write_path_normalized(&mut buf, path, true);
-                    out.push_str(&buf);
+                    // нормализация пишется прямо в out (без промежуточного buf)
+                    write_path_normalized(&mut out, path, true);
                 } else {
                     out.push_str(&raw[ps..pe]);
                 }
@@ -1006,41 +1006,58 @@ fn write_encoded(out: &mut String, bytes: &[u8], needs: impl Fn(u8) -> bool) {
 /// `split_backslash`: для специальных схем '\' — разделитель.
 fn write_path_normalized(out: &mut String, path: &[u8], split_backslash: bool) {
     let is_sep = |c: u8| c == b'/' || (split_backslash && c == b'\\');
-    let mut norm: Vec<&[u8]> = Vec::new();
-    let segs: Vec<&[u8]> = path.split(|&c| is_sep(c)).collect();
-    let start = usize::from(!path.is_empty() && is_sep(path[0]));
-    let last = segs.len().saturating_sub(1);
+    // Стек позиций начала сегментов в out для отката на ".." (truncate
+    // вместо pop из Vec<&[u8]>). Аллоцируется лениво — только для путей
+    // с реальными сегментами; раньше было: Vec сегментов + Vec norm +
+    // Vec от to_ascii_lowercase() НА КАЖДЫЙ сегмент.
+    let mut seg_starts: Vec<usize> = Vec::new();
+    let n = path.len();
+    let start = usize::from(n > 0 && is_sep(path[0])); // пустой элемент ведущего '/'
+    let mut pos = 0usize;
+    let mut elem_start = 0usize;
+    let mut k = 0usize;
     let mut trailing = false;
-    for (k, seg) in segs.iter().enumerate() {
-        if k < start {
-            continue; // пустой сегмент ведущего '/'
-        }
-        let lower = seg.to_ascii_lowercase();
-        if lower == b"." || lower == b"%2e" {
-            if k == last {
-                trailing = true;
+    while pos <= n {
+        if pos == n || is_sep(path[pos]) {
+            let is_last = pos == n;
+            if k >= start {
+                let seg = &path[elem_start..pos];
+                if seg.len() == 1 && seg[0] == b'.' || seg.eq_ignore_ascii_case(b"%2e") {
+                    if is_last {
+                        trailing = true;
+                    }
+                } else if seg.len() == 2 && seg == b".."
+                    || seg.eq_ignore_ascii_case(b".%2e")
+                    || seg.eq_ignore_ascii_case(b"%2e.")
+                    || seg.eq_ignore_ascii_case(b"%2e%2e")
+                {
+                    if let Some(p) = seg_starts.pop() {
+                        out.truncate(p);
+                    }
+                    if is_last {
+                        trailing = true;
+                    }
+                } else if is_last && seg.is_empty() {
+                    trailing = true; // путь заканчивается разделителем
+                } else {
+                    seg_starts.push(out.len());
+                    out.push('/');
+                    write_encoded(out, seg, path_needs_enc);
+                }
             }
-        } else if lower == b".." || lower == b".%2e" || lower == b"%2e." || lower == b"%2e%2e" {
-            norm.pop();
-            if k == last {
-                trailing = true;
+            k += 1;
+            elem_start = pos + 1;
+            if pos == n {
+                break;
             }
-        } else if k == last && seg.is_empty() {
-            trailing = true; // путь заканчивается разделителем
-        } else {
-            norm.push(seg);
         }
-    }
-    for seg in &norm {
-        out.push('/');
-        write_encoded(out, seg, path_needs_enc);
+        pos += 1;
     }
     if trailing {
         out.push('/');
     }
-    if out.is_empty() {
-        out.push('/');
-    }
+    // Пустой результат невозможен: пустой путь даёт trailing -> "/",
+    // у обоих вызывающих (as_str/path) перед этим уже есть непустой префикс.
 }
 
 // ---------------------------------------------------------------------------
@@ -1247,6 +1264,71 @@ mod tests {
         assert_eq!(parse("https://ex.com/%2E%2E/b").unwrap().path(), "/b");
         assert_eq!(parse("https://ex.com//x//y").unwrap().path(), "//x//y");
         assert_eq!(parse("https://ex.com\\a\\b").unwrap().path(), "/a/b");
+    }
+
+    /// Края потоковой нормализации (рерайт без Vec<&[u8]> и нижнего
+    /// регистра): множественные "..", over-pop, регистр %2E, хвостовые
+    /// точки/пустые сегменты, смешанные разделители, percent-в пути.
+    #[test]
+    fn path_normalization_streaming_edges() {
+        // глубокая вложенность: pop через несколько уровней
+        assert_eq!(parse("https://e/a/b/c/../../../d").unwrap().path(), "/d");
+        // over-pop: ".." больше, чем сегментов
+        assert_eq!(parse("https://e/../../..").unwrap().path(), "/");
+        // регистронезависимые dot-формы ("%2e%2E" = ".." -> pop "a")
+        assert_eq!(parse("https://e/a/%2e%2E/b").unwrap().path(), "/b");
+        assert_eq!(parse("https://e/x/.%2e/y").unwrap().path(), "/y");
+        assert_eq!(parse("https://e/x/%2E./y").unwrap().path(), "/y");
+        // хвостовая dot-форма -> завершающий слэш
+        assert_eq!(parse("https://e/a/..").unwrap().path(), "/");
+        assert_eq!(parse("https://e/a/%2e").unwrap().path(), "/a/");
+        // пустые средние сегменты сохраняются
+        assert_eq!(parse("https://e/a//b/../c").unwrap().path(), "/a//c");
+        // обратные слэши как разделители спец-схем + точка
+        assert_eq!(parse("https://e/a\\.\\b").unwrap().path(), "/a/b");
+        // percent-в сегменте (не dot-форма) сохраняется дословно
+        // ('%' не входит в path percent-encode set — паритет с url)
+        assert_eq!(parse("https://e/a%zz/b").unwrap().path(), "/a%zz/b");
+        // сверка с эталоном на тех же входах
+        for u in [
+            "https://e/a/b/c/../../../d",
+            "https://e/../../..",
+            "https://e/a/%2e%2E/b",
+            "https://e/x/.%2e/y",
+            "https://e/a/..",
+            "https://e/a//b/../c",
+            "https://e/a\\..\\b",
+        ] {
+            assert_eq!(
+                parse(u).unwrap().as_str().to_string(),
+                url::Url::parse(u).unwrap().to_string(),
+                "расхождение с url: {u}"
+            );
+        }
+    }
+
+    /// ends_in_a_number без Vec: края хвостовых точек и частей.
+    #[test]
+    fn ends_in_a_number_edges() {
+        // хвостовая точка домена — не число
+        assert_eq!(
+            parse("http://example.com./").unwrap().as_str(),
+            "http://example.com./"
+        );
+        // две точки на конце: пустые метки допускаются и у url (паритет)
+        assert_eq!(parse("http://a../").unwrap().as_str(), "http://a../");
+        assert_eq!(
+            url::Url::parse("http://a../").unwrap().as_str(),
+            "http://a../"
+        );
+        // число с хвостовой точкой — IPv4
+        assert_eq!(
+            parse("http://1.2.3.4./").unwrap().host_str().unwrap(),
+            "1.2.3.4"
+        );
+        // 5 частей — IPv4-парсер отказывает (паритет с url)
+        assert!(parse("http://1.2.3.4.5/").is_err());
+        assert!(url::Url::parse("http://1.2.3.4.5/").is_err());
     }
 
     /// IPv4-нормализация по грамматике WHATWG.

@@ -4,7 +4,7 @@
 Каждое изменение доказывается числами: benchmark до/после + профилирование.
 Оптимизируем то, что профиль показывает самым тяжёлым.
 
-## Текущие результаты (итерация 8: foxurl v0.2 — собственный WHATWG IPv6-парсер)
+## Текущие результаты (итерация 9: foxurl — нулевые аллокации на типичном корпусе)
 
 | Крейт | Бенчмарк | Эталон | Итог |
 |---|---|---|---|
@@ -15,10 +15,9 @@
 | foxjson | parse/small | serde_json | **5.4x быстрее** |
 | foxsearch | find/"Mozilla Corporation" | std::str::find | **1.9x быстрее** |
 | foxsearch | find/"zzz-absent-zzz" | std::str::find | **2.7x быстрее** |
-| foxurl | parse/corpus-all (14 URL) | url | **1.70x быстрее** (2.46 µs vs 4.18 µs) |
-| foxurl | parse/URL с IPv6-хостом и портом | url | **2.1x быстрее** (130 ns vs 278 ns; было 1.3x) |
-| foxurl | parse/URL с userinfo | url | **1.9x быстрее** |
-| foxurl | parse/URL с верхним регистром хоста | url | **2.5x быстрее** |
+| foxurl | parse/corpus-all (14 URL) | url | **2.1x быстрее** (2.04 µs vs 4.28 µs; было 1.70x) |
+| foxurl | все 14 URL корпуса | url | **1.7–3.1x быстрее** (разброс) |
+| foxurl | parse/URL с IPv6-хостом и портом | url | **2.2x быстрее** (126 ns vs 279 ns) |
 
 История session-5000: 6.05 ms (дерево, v0.1) -> 1.65 ms (тап, v0.5) -> 1.34 ms (v0.6) -> **1.18 ms (v0.7)** — **5.1x за жизнь проекта**.
 Числа корректно округлены: foxjson бит-в-бит совпадает со `std str::parse` (точнее serde_json на 1 ulp).
