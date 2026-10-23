@@ -12,7 +12,7 @@
 
 КОНТЕКСТ:
 - Репозиторий: https://github.com/x7717/firefox-rs (локально: /home/z/firefox-rs)
-- Форк Firefox: https://github.com/x7717/firefox (форк mozilla/gecko-dev)
+- Форк Firefox: https://github.com/x7717/gecko-dev (форк mozilla/gecko-dev)
 - GitHub token: ghp_YOUR_TOKEN_HERE
 - Журналы: /home/z/firefox-rs/WORKLOG.md и /home/z/my-project/worklog.md — СНАЧАЛА ПРОЧИТАЙ ИХ
 

@@ -37,7 +37,7 @@ zero-copy, SWAR/SIMD (core::arch), кеш-локальность, борьба �
 
 1. Sparse/partial clone форка (не тащим 20 ГБ целиком):
    ```bash
-   git clone --filter=blob:none --sparse https://github.com/x7717/firefox
+   git clone --filter=blob:none --sparse https://github.com/x7717/gecko-dev
    cd firefox && git sparse-checkout set intl xpcom/parser netwerk
    ```
 2. Замена узлов на наши крейты (vendoring в mozilla-central tree).

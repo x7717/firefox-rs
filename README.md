@@ -14,8 +14,9 @@
 
 ## Форк Firefox
 
-[x7717/firefox](https://github.com/x7717/firefox) — форк `mozilla/gecko-dev`
-(создан через GitHub API, интеграция патчей — Phase 3, см. `docs/ARCHITECTURE.md`).
+[x7717/gecko-dev](https://github.com/x7717/gecko-dev) — форк `mozilla/gecko-dev`
+(Rust-ядро WebRender уже собирается в его CI; интеграция патчей — Phase 3,
+см. `docs/ARCHITECTURE.md`).
 
 ## Быстрый старт
 

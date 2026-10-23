@@ -7,7 +7,7 @@
 
 Сделано:
 - создан репозиторий `x7717/firefox-rs`;
-- создан форк Firefox: `mozilla/gecko-dev` -> `x7717/firefox` (GitHub API, 202 Accepted — сборка форка идёт на стороне GitHub);
+- форк Firefox: `mozilla/gecko-dev` -> `x7717/gecko-dev` (создан ранее в этой сессии; GitHub допускает только один форк на аккаунт — повторный запрос вернул существующий);
 - Rust-воркспейс:
   - `foxjson` — однопроходный JSON-парсер: zero-copy строки (Cow), объекты как срезы пар, строгая валидация (числа, контрольные символы, lone surrogates), MAX_DEPTH=128; тесты включают структурную эквивалентность с serde_json; criterion-бенчи против serde_json (small / session-500 / session-5000);
   - `foxsearch` — SWAR-поиск: `find_byte` (8 байт/итерация, битовые трюки), `find_two_bytes`, `find_substring` (фильтр по последнему байту + find_byte); property-тесты против std (10000 случайных случаев); criterion-бенчи против `std::str::find` на документе ~7 МБ;
