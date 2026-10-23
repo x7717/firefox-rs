@@ -1,0 +1,16 @@
+[package]
+name = "foxsearch"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Vectorized (SWAR) byte/substring search for Firefox hot paths"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "search"
+harness = false

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *" # nightly
+
+jobs:
+  test:
+    name: fmt + clippy + test + doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: rustfmt (advisory на старте проекта)
+        run: cargo fmt --all -- --check
+        continue-on-error: true
+
+      - name: clippy (advisory на старте проекта)
+        run: cargo clippy --workspace --all-targets
+        continue-on-error: true
+
+      - name: tests
+        run: cargo test --workspace
+
+      - name: doc
+        run: cargo doc --workspace --no-deps

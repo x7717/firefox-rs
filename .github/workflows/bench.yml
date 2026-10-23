@@ -1,0 +1,54 @@
+name: Benchmark
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * *" # nightly
+
+permissions:
+  contents: write
+
+jobs:
+  bench:
+    name: criterion bench + history
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run benchmarks
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo bench --workspace -- --output-format bencher | tee bench-output.txt
+
+      - name: Benchmark summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Benchmark results"
+            echo '```text'
+            grep -E "^(test )?.*bench:" bench-output.txt || cat bench-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # История производительности в ветке gh-pages + алерт при регрессе >150%
+      - name: Store benchmark history
+        if: github.ref == 'refs/heads/main'
+        uses: benchmark-action/github-action-benchmark@v1
+        continue-on-error: true
+        with:
+          name: Rust Benchmark
+          tool: cargo
+          output-file-path: bench-output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: "150%"
+          comment-on-alert: true
+          fail-on-alert: false

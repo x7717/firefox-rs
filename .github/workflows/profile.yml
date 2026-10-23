@@ -1,0 +1,145 @@
+name: Profiling
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * 1" # еженедельно, понедельник
+
+permissions:
+  contents: read
+
+jobs:
+  perf:
+    name: perf + flamegraph (${{ matrix.crate }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [foxjson, foxsearch]
+        include:
+          - crate: foxjson
+            example: hotspot_json
+          - crate: foxsearch
+            example: hotspot_search
+    env:
+      CARGO_PROFILE_RELEASE_DEBUG: "true"
+      CARGO_PROFILE_RELEASE_STRIP: "none"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install perf
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq linux-tools-common linux-tools-generic || true
+          sudo sysctl -w kernel.perf_event_paranoid=-1 || true
+          sudo sysctl -w kernel.kptr_restrict=0 || true
+
+      - name: Build hotspot workload (with debug symbols)
+        run: cargo build --release --example ${{ matrix.example }} -p ${{ matrix.crate }}
+
+      - name: perf record + report + flamegraph
+        id: perf
+        continue-on-error: true
+        shell: bash
+        run: |
+          PERF_BIN="$(command -v perf || true)"
+          if [ -z "$PERF_BIN" ]; then
+            PERF_BIN="$(ls /usr/lib/linux-tools*/perf_* /usr/bin/perf_* 2>/dev/null | head -1 || true)"
+          fi
+          if [ -z "$PERF_BIN" ]; then
+            echo "perf is not available on this runner"
+            exit 1
+          fi
+          echo "Using perf: $PERF_BIN"
+          sudo "$PERF_BIN" record -e cpu-clock -F 299 -g --call-graph dwarf,16384 -o perf.data -- target/release/examples/${{ matrix.example }}
+          sudo chmod 644 perf.data
+          "$PERF_BIN" report --stdio --no-children -i perf.data | head -120 > perf-report.txt
+          "$PERF_BIN" script -i perf.data > perf.script
+          git clone --quiet --depth 1 https://github.com/brendangregg/FlameGraph.git /tmp/FlameGraph
+          /tmp/FlameGraph/stackcollapse-perf.pl < perf.script | /tmp/FlameGraph/flamegraph.pl --title "hotspot ${{ matrix.crate }}" > flamegraph-${{ matrix.crate }}.svg
+          echo "status=ok" >> "$GITHUB_OUTPUT"
+
+      - name: Hotspot summary
+        if: steps.perf.outputs.status == 'ok'
+        shell: bash
+        run: |
+          {
+            echo "## Hotspots: \`${{ matrix.crate }}\` (perf, own-time)"
+            echo '```text'
+            head -45 perf-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload profile artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profile-perf-${{ matrix.crate }}
+          path: |
+            perf-report.txt
+            perf.script
+            flamegraph-${{ matrix.crate }}.svg
+          if-no-files-found: ignore
+
+  callgrind:
+    name: callgrind (${{ matrix.crate }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [foxjson, foxsearch]
+        include:
+          - crate: foxjson
+            example: hotspot_json
+          - crate: foxsearch
+            example: hotspot_search
+    env:
+      CARGO_PROFILE_RELEASE_DEBUG: "true"
+      CARGO_PROFILE_RELEASE_STRIP: "none"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install valgrind
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq valgrind
+
+      - name: Build hotspot workload
+        run: cargo build --release --example ${{ matrix.example }} -p ${{ matrix.crate }}
+
+      - name: callgrind run
+        shell: bash
+        run: |
+          if [ "${{ matrix.crate }}" = "foxjson" ]; then
+            export FOX_HOTSPOT_TABS=200 FOX_HOTSPOT_ITERS=50
+          else
+            export FOX_HOTSPOT_PARAS=500 FOX_HOTSPOT_ITERS=50
+          fi
+          valgrind --tool=callgrind --callgrind-out-file=callgrind.out target/release/examples/${{ matrix.example }}
+          callgrind_annotate callgrind.out | head -80 > callgrind-report.txt
+
+      - name: Hotspot summary
+        shell: bash
+        run: |
+          {
+            echo "## Callgrind: \`${{ matrix.crate }}\` (instruction counts, deterministic)"
+            echo '```text'
+            head -45 callgrind-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: profile-callgrind-${{ matrix.crate }}
+          path: |
+            callgrind-report.txt
+            callgrind.out
+          if-no-files-found: ignore
