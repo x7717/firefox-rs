@@ -16,19 +16,10 @@
 const LO: u64 = 0x0101_0101_0101_0101;
 const HI: u64 = 0x8080_8080_8080_8080;
 
-const RARITY_LETTERS: [u8; 38] = [
-    b'e', b't', b'a', b'o', b'i', b'n', b's', b'h', b'r', b'l', b'd', b'u', b'c', b'm', b'f', b'g',
-    b'p', b'y', b'b', b'E', b'T', b'A', b'O', b'I', b'N', b'S', b'H', b'R', b'L', b'D', b'U', b'C',
-    b'M', b'F', b'G', b'P', b'Y', b'B',
-];
-const RARITY_UPPER: [u8; 26] = [
-    b'A', b'B', b'C', b'D', b'E', b'F', b'G', b'H', b'I', b'J', b'K', b'L', b'M', b'N', b'O', b'P',
-    b'Q', b'R', b'S', b'T', b'U', b'V', b'W', b'X', b'Y', b'Z',
-];
-const RARITY_PUNCT: [u8; 10] = [b'.', b'/', b':', b'-', b'?', b'=', b'&', b'%', b',', b'_'];
-const RARITY_RARE: [u8; 14] = [
-    b'z', b'j', b'q', b'x', b'v', b'k', b'w', b'Z', b'J', b'Q', b'X', b'V', b'K', b'W',
-];
+const RARITY_LETTERS: [u8; 38] = *b"etaoinshrlducmfgpybETAOINSHRLDUCMFGPYB";
+const RARITY_UPPER: [u8; 26] = *b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const RARITY_PUNCT: [u8; 10] = *b"./:-?=&%,_";
+const RARITY_RARE: [u8; 14] = *b"zjqxvkwZJQXVKW";
 /// Частые кириллические буквы (вторые байты UTF-8: а,р,с,т,у,в,д,е,и,к,л,м,н,о,п) —
 /// отличаются от прочих не-ASCII байтов, чтобы фильтр выбирал среди них редкие
 /// (г,ч,я,ф,х,ц,ш,щ,ъ,ы,ь,э,ю,й,ж,з,б).
@@ -298,15 +289,13 @@ pub fn find_substring(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         // сверка префикса — без лишних байтовых чтений (v0.1-стратегия).
         let mut i = last;
         while i < haystack.len() {
-            match find_byte(&haystack[i..], fb_byte) {
-                Some(p) => {
-                    let end = i + p;
-                    if &haystack[end - last..end] == &needle[..last] {
-                        return Some(end - last);
-                    }
-                    i = end + 1;
+            {
+                let p = find_byte(&haystack[i..], fb_byte)?;
+                let end = i + p;
+                if haystack[end - last..end] == needle[..last] {
+                    return Some(end - last);
                 }
-                None => return None,
+                i = end + 1;
             }
         }
         return None;
@@ -319,20 +308,18 @@ pub fn find_substring(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     let b2 = needle[p2];
     let mut i = fb; // минимальный индекс, с которого кандидат помещается целиком
     while i < haystack.len() {
-        match find_byte(&haystack[i..], fb_byte) {
-            Some(p) => {
-                let end = i + p; // позиция needle[fb] в haystack
-                let start = end - fb; // кандидат на начало совпадения
-                if start + n <= haystack.len()
-                    && haystack[start + p1] == b1
-                    && haystack[start + p2] == b2
-                    && &haystack[start..start + n] == needle
-                {
-                    return Some(start);
-                }
-                i = end + 1;
+        {
+            let p = find_byte(&haystack[i..], fb_byte)?;
+            let end = i + p; // позиция needle[fb] в haystack
+            let start = end - fb; // кандидат на начало совпадения
+            if start + n <= haystack.len()
+                && haystack[start + p1] == b1
+                && haystack[start + p2] == b2
+                && &haystack[start..start + n] == needle
+            {
+                return Some(start);
             }
-            None => return None,
+            i = end + 1;
         }
     }
     None
@@ -414,7 +401,7 @@ mod tests {
         // границы переключения ядер: 0..64 байта
         for len in 0..=64 {
             let hay = vec![b'x'; len];
-            for needle in [b'x', b'y'] {
+            for needle in *b"xy" {
                 let expected = hay.iter().position(|&b| b == needle);
                 assert_eq!(find_byte(&hay, needle), expected, "len={len}");
             }

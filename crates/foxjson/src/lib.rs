@@ -1,22 +1,26 @@
 //! FoxJSON — быстрый однопроходный JSON-парсер для горячих путей Firefox
 //! (session store, prefs, telemetry).
 //!
-//! Ключевые свойства:
-//! - zero-copy: строки и ключи без escape-последовательностей заимствуются
-//!   из входа ([`Cow::Borrowed`]), с escape — аллоцируются ([`Cow::Owned`]);
-//! - объекты — срез пар с сохранением порядка (быстрее HashMap на малых
-//!   объектах, что доминирует в реальных payload'ах браузера);
-//! - строгая валидация: грамматика чисел, контрольные символы, lone surrogates;
-//! - ограничение глубины вложенности ([`MAX_DEPTH`], как в serde_json).
+//! Архитектура (итерация 4): ТАП-ПАРСЕР в стиле simd-json.
 //!
-//! Итерация 3 (по данным perf-профиля: parse_value 28%, parse_string 18%):
-//! - SWAR-скан строк: 8 байт/итерацию, поиск кавычки/backslash/контроля
-//!   битовыми трюками вместо побайтового match;
-//! - быстрый путь чисел: сборка мантиссы в u64 + точные степени десятки
-//!   (вместо `str::parse::<f64>`) — корректно округлённый результат,
-//!   эквивалентный serde_json; медленный путь только для переполнений.
+//! Дерево значений старого API аллоцировало ~25k раз на session-5000
+//! (Vec на каждый объект/массив + String на каждую escape-строку).
+//! Тап-парсер заменяет всё это:
+//! - **один плоский `Vec<Node>`** (12 байт/узел): дети контейнера лежат
+//!   НЕПРЕРЫВНО, обход — по срезам вместо указателей (cache-friendly);
+//!   на весь документ — лишь ~log2 роста ленты реаллокаций;
+//! - **один общий owned-буфер**: все escape-строки документа декодируются
+//!   в единственный `String`, узел хранит (смещение, длина) — ноль
+//!   аллокаций на строку;
+//! - строки без escape — zero-copy срезы входа (флаг заимствования).
+//!
+//! Прочие свойства:
+//! - быстрый путь чисел: мантисса в u64 + точные степени десятки,
+//!   бит-в-бит совпадает с корректно округлённым `str::parse::<f64>`;
+//! - SWAR-скан строк (8 байт/итерацию) и двухфазный декодинг escape-строк;
+//! - строгая валидация: грамматика чисел, контрольные символы, суррогаты;
+//! - ограничение глубины вложенности ([`MAX_DEPTH`]).
 
-use std::borrow::Cow;
 use std::fmt;
 
 /// Максимальная глубина вложенности (как в serde_json по умолчанию).
@@ -31,100 +35,426 @@ const POW10: [f64; 23] = [
     1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
 ];
 
-/// JSON-значение.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Value<'a> {
+// ---------------------------------------------------------------------------
+// Тап
+// ---------------------------------------------------------------------------
+
+/// Тип узла тапа.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
     Null,
-    Bool(bool),
-    Number(f64),
-    Str(Cow<'a, str>),
-    Array(Vec<Value<'a>>),
-    Object(Vec<(Cow<'a, str>, Value<'a>)>),
+    Bool,
+    Number,
+    Str,
+    Array,
+    Object,
 }
 
-impl<'a> Value<'a> {
-    /// Значение по ключу объекта (первое вхождение; порядок ключей сохраняется).
-    pub fn get(&self, key: &str) -> Option<&Value<'a>> {
-        match self {
-            Value::Object(pairs) => pairs.iter().find(|(k, _)| k == key).map(|(_, v)| v),
+const TAG_NULL: u32 = 0;
+const TAG_BOOL: u32 = 1;
+const TAG_NUMBER: u32 = 2;
+const TAG_STR: u32 = 3;
+const TAG_ARRAY: u32 = 4;
+const TAG_OBJECT: u32 = 5;
+/// Внутренний узел-закрыватель контейнера: a = индекс заголовка, b = число детей/пар.
+const TAG_CLOSE: u32 = 6;
+/// Строка заимствована из входа (иначе — из owned-буфера документа).
+const FLAG_STR_BORROWED: u32 = 1 << 8;
+
+/// Узел тапа: 12 байт.
+///
+/// - Number: f64-биты, разложенные по `a` (младшие) и `b` (старшие);
+/// - Str: `a` = смещение (вход или owned-буфер), `b` = длина в байтах;
+/// - Bool: `a` = 0/1;
+/// - Array: `a` = индекс первого ребёнка, `b` = число детей;
+/// - Object: `a` = индекс первого узла-ключа, `b` = ЧИСЛО ПАР
+///   (в ленте пара = узел ключа + узел значения, непрерывно).
+#[derive(Clone, Copy)]
+struct Node {
+    hdr: u32, // младшие 8 бит — тег, бит 8 — флаг заимствования строки
+    a: u32,
+    b: u32,
+}
+
+impl Node {
+    #[inline]
+    fn tag(&self) -> u32 {
+        self.hdr & 0xFF
+    }
+
+    #[inline]
+    fn kind(&self) -> Kind {
+        match self.tag() {
+            TAG_NULL => Kind::Null,
+            TAG_BOOL => Kind::Bool,
+            TAG_NUMBER => Kind::Number,
+            TAG_STR => Kind::Str,
+            TAG_ARRAY => Kind::Array,
+            _ => Kind::Object,
+        }
+    }
+
+    #[inline]
+    fn is_str_borrowed(&self) -> bool {
+        self.hdr & FLAG_STR_BORROWED != 0
+    }
+}
+
+impl fmt::Debug for Document<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Document")
+            .field("nodes", &self.tape.len())
+            .field("owned_bytes", &self.owned.len())
+            .finish()
+    }
+}
+
+impl fmt::Debug for NodeRef<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind() {
+            Kind::Null => f.write_str("Null"),
+            Kind::Bool => write!(f, "Bool({:?})", self.as_bool()),
+            Kind::Number => write!(f, "Number({:?})", self.as_f64()),
+            Kind::Str => write!(f, "Str({:?})", self.as_str()),
+            Kind::Array => write!(f, "Array(len={:?})", self.len()),
+            Kind::Object => write!(f, "Object(pairs={:?})", self.len()),
+        }
+    }
+}
+
+impl fmt::Debug for ObjectRef<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.iter().map(|(k, _)| k)).finish()
+    }
+}
+
+/// Спарсенный JSON-документ: тап + owned-буфер строк.
+///
+/// Владеет лентой; строки без escape заимствованы из входа.
+pub struct Document<'a> {
+    input: &'a str,
+    tape: Vec<Node>,
+    owned: String,
+}
+
+/// Ссылка на узел документа с навигацией.
+#[derive(Clone, Copy)]
+pub struct NodeRef<'d, 'a> {
+    doc: &'d Document<'a>,
+    node: &'d Node,
+}
+
+/// Срез массива: дети идут подряд с узлами CLOSE вложенных контейнеров,
+/// обход — через размер поддерева.
+#[derive(Clone, Copy)]
+pub struct ArrayRef<'d, 'a> {
+    doc: &'d Document<'a>,
+    head: &'d Node,
+}
+
+/// Срез объекта: пары (ключ, значение) в порядке документа; обход —
+/// через размер поддерева значения (значение-контейнер занимает
+/// 1 + размер поддерева узлов).
+#[derive(Clone, Copy)]
+pub struct ObjectRef<'d, 'a> {
+    doc: &'d Document<'a>,
+    head: &'d Node,
+}
+
+/// Размер поддерева в узлах ленты: контейнер — от заголовка до его
+/// CLOSE-узла включительно, скаляр — 1.
+#[inline]
+fn subtree_size(tape: &[Node], idx: usize) -> usize {
+    match tape[idx].tag() {
+        TAG_ARRAY | TAG_OBJECT => tape[idx].b as usize - idx + 1,
+        _ => 1,
+    }
+}
+
+impl<'d, 'a> ArrayRef<'d, 'a> {
+    /// Число детей.
+    pub fn len(&self) -> usize {
+        self.doc.tape[self.head.b as usize].b as usize
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Элемент по индексу (обход с пропусками поддеревьев).
+    pub fn at(&self, i: usize) -> Option<NodeRef<'d, 'a>> {
+        let close = self.head.b as usize;
+        let mut cur = self.head.a as usize;
+        let mut k = 0usize;
+        while cur < close {
+            if k == i {
+                return Some(NodeRef {
+                    doc: self.doc,
+                    node: &self.doc.tape[cur],
+                });
+            }
+            cur += subtree_size(&self.doc.tape, cur);
+            k += 1;
+        }
+        None
+    }
+
+    /// Итератор по детям.
+    pub fn iter(&self) -> impl Iterator<Item = NodeRef<'d, 'a>> {
+        let doc = self.doc;
+        let close = self.head.b as usize;
+        let mut cur = self.head.a as usize;
+        std::iter::from_fn(move || {
+            if cur >= close {
+                return None;
+            }
+            let node = &doc.tape[cur];
+            cur += subtree_size(&doc.tape, cur);
+            Some(NodeRef { doc, node })
+        })
+    }
+}
+
+impl<'d, 'a> ObjectRef<'d, 'a> {
+    /// Число пар.
+    pub fn len(&self) -> usize {
+        self.doc.tape[self.head.b as usize].b as usize
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Значение по ключу (первое вхождение; порядок ключей сохраняется).
+    pub fn get(&self, key: &str) -> Option<NodeRef<'d, 'a>> {
+        let close = self.head.b as usize;
+        let mut cur = self.head.a as usize;
+        while cur < close {
+            let key_node = &self.doc.tape[cur];
+            let value_idx = cur + 1;
+            if self.doc.str_of(key_node) == key {
+                return Some(NodeRef {
+                    doc: self.doc,
+                    node: &self.doc.tape[value_idx],
+                });
+            }
+            cur = value_idx + subtree_size(&self.doc.tape, value_idx);
+        }
+        None
+    }
+
+    /// Ключ пары `i` — заимствован из входа (иначе декодирован в owned-буфер).
+    pub fn key_is_borrowed(&self, i: usize) -> bool {
+        self.pair_at(i).map(|(k, _)| k.is_str_borrowed()).unwrap_or(false)
+    }
+
+    /// Ключ пары `i`.
+    pub fn key_at(&self, i: usize) -> &'d str {
+        let (k, _) = self.pair_at(i).expect("pair index out of range");
+        self.doc.str_of(k)
+    }
+
+    /// Значение пары `i`.
+    pub fn value_at(&self, i: usize) -> NodeRef<'d, 'a> {
+        let (_, v) = self.pair_at(i).expect("pair index out of range");
+        NodeRef {
+            doc: self.doc,
+            node: v,
+        }
+    }
+
+    /// (узел ключа, узел значения) пары `i`.
+    fn pair_at(&self, i: usize) -> Option<(&'d Node, &'d Node)> {
+        let close = self.head.b as usize;
+        let mut cur = self.head.a as usize;
+        let mut k = 0usize;
+        while cur < close {
+            let key_node = &self.doc.tape[cur];
+            let value_idx = cur + 1;
+            let value_node = &self.doc.tape[value_idx];
+            if k == i {
+                return Some((key_node, value_node));
+            }
+            cur = value_idx + subtree_size(&self.doc.tape, value_idx);
+            k += 1;
+        }
+        None
+    }
+
+    /// Итератор по парам (ключ, значение).
+    pub fn iter(&self) -> impl Iterator<Item = (&'d str, NodeRef<'d, 'a>)> {
+        let doc = self.doc;
+        let close = self.head.b as usize;
+        let mut cur = self.head.a as usize;
+        std::iter::from_fn(move || {
+            if cur >= close {
+                return None;
+            }
+            let key = doc.str_of(&doc.tape[cur]);
+            let value_idx = cur + 1;
+            let val = NodeRef {
+                doc,
+                node: &doc.tape[value_idx],
+            };
+            cur = value_idx + subtree_size(&doc.tape, value_idx);
+            Some((key, val))
+        })
+    }
+}
+
+impl<'d, 'a> NodeRef<'d, 'a> {
+    /// Тип узла.
+    pub fn kind(&self) -> Kind {
+        self.node.kind()
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.node.kind() == Kind::Null
+    }
+
+    /// Строка, если узел — строка.
+    pub fn as_str(&self) -> Option<&'d str> {
+        match self.node.tag() {
+            TAG_STR => Some(self.doc.str_of(self.node)),
             _ => None,
         }
     }
 
-    pub fn as_str(&self) -> Option<&str> {
-        match self {
-            Value::Str(s) => Some(s.as_ref()),
+    /// Заимствована ли строка из входа (false — декодирована в owned-буфер).
+    pub fn str_is_borrowed(&self) -> Option<bool> {
+        match self.node.tag() {
+            TAG_STR => Some(self.node.is_str_borrowed()),
+            _ => None,
+        }
+    }
+
+    pub fn as_bool(&self) -> Option<bool> {
+        match self.node.tag() {
+            TAG_BOOL => Some(self.node.a != 0),
             _ => None,
         }
     }
 
     pub fn as_f64(&self) -> Option<f64> {
-        match self {
-            Value::Number(n) => Some(*n),
+        match self.node.tag() {
+            TAG_NUMBER => Some(f64::from_bits(
+                ((self.node.b as u64) << 32) | self.node.a as u64,
+            )),
             _ => None,
         }
     }
 
-    pub fn as_array(&self) -> Option<&[Value<'a>]> {
-        match self {
-            Value::Array(a) => Some(a),
+    /// Дети массива.
+    pub fn as_array(&self) -> Option<ArrayRef<'d, 'a>> {
+        match self.node.tag() {
+            TAG_ARRAY => Some(ArrayRef {
+                doc: self.doc,
+                head: self.node,
+            }),
             _ => None,
         }
     }
 
-    pub fn as_object(&self) -> Option<&[(Cow<'a, str>, Value<'a>)]> {
-        match self {
-            Value::Object(o) => Some(o),
+    /// Длина массива/объекта (для объекта — число пар).
+    pub fn len(&self) -> Option<usize> {
+        match self.node.tag() {
+            TAG_ARRAY | TAG_OBJECT => Some(self.doc.tape[self.node.b as usize].b as usize),
             _ => None,
         }
     }
 
-    pub fn is_null(&self) -> bool {
-        matches!(self, Value::Null)
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len().is_none_or(|l| l == 0)
+    }
+
+    /// Срез объекта.
+    pub fn as_object(&self) -> Option<ObjectRef<'d, 'a>> {
+        match self.node.tag() {
+            TAG_OBJECT => Some(ObjectRef {
+                doc: self.doc,
+                head: self.node,
+            }),
+            _ => None,
+        }
+    }
+
+    /// Элемент массива по индексу.
+    pub fn at(&self, i: usize) -> Option<NodeRef<'d, 'a>> {
+        self.as_array()?.at(i)
+    }
+
+    /// Значение по ключу (если узел — объект).
+    pub fn get(&self, key: &str) -> Option<NodeRef<'d, 'a>> {
+        self.as_object()?.get(key)
     }
 }
 
-/// Вид ошибки парсинга.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErrorKind {
-    UnexpectedEof,
-    UnexpectedChar(u8),
-    InvalidNumber,
-    InvalidEscape,
-    InvalidUnicodeEscape,
-    LoneSurrogate,
-    ControlCharInString,
-    InvalidLiteral,
-    MaxDepthExceeded,
-    TrailingCharacters,
-}
+impl<'a> Document<'a> {
+    #[inline]
+    fn str_of(&self, node: &Node) -> &str {
+        if node.is_str_borrowed() {
+            &self.input[node.a as usize..node.a as usize + node.b as usize]
+        } else {
+            &self.owned[node.a as usize..node.a as usize + node.b as usize]
+        }
+    }
 
-/// Ошибка парсинга с позицией во входе (в байтах).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Error {
-    pub position: usize,
-    pub kind: ErrorKind,
-}
+    /// Корневой узел документа.
+    pub fn root(&self) -> NodeRef<'_, 'a> {
+        NodeRef {
+            doc: self,
+            node: &self.tape[0],
+        }
+    }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "JSON error at byte {}: {:?}", self.position, self.kind)
+    /// Значение по ключу корневого объекта.
+    pub fn get(&self, key: &str) -> Option<NodeRef<'_, 'a>> {
+        self.root().get(key)
+    }
+
+    /// Парсит документ целиком, требуя исчерпания входа.
+    pub fn parse(input: &'a str) -> Result<Document<'a>, Error> {
+        let mut p = TapeParser {
+            input,
+            bytes: input.as_bytes(),
+            pos: 0,
+            depth: 0,
+            tape: Vec::with_capacity(64),
+            owned: String::new(),
+        };
+        p.skip_ws();
+        p.parse_value()?;
+        p.skip_ws();
+        if p.pos != p.bytes.len() {
+            return Err(p.err(ErrorKind::TrailingCharacters));
+        }
+        Ok(Document {
+            input,
+            tape: p.tape,
+            owned: p.owned,
+        })
     }
 }
-
-impl std::error::Error for Error {}
 
 /// Публичный одношаговый API: распарсить весь документ.
-pub fn parse(input: &str) -> Result<Value<'_>, Error> {
-    Parser::new(input).parse_document()
+pub fn parse(input: &str) -> Result<Document<'_>, Error> {
+    Document::parse(input)
 }
 
-/// Однопроходный рекурсивный парсер поверх байтов.
-pub struct Parser<'a> {
+// ---------------------------------------------------------------------------
+// Парсер
+// ---------------------------------------------------------------------------
+
+struct TapeParser<'a> {
     input: &'a str,
     bytes: &'a [u8],
     pos: usize,
     depth: usize,
+    tape: Vec<Node>,
+    owned: String,
 }
 
 /// Результат SWAR-скана содержимого строки.
@@ -154,54 +484,28 @@ fn swar_has_control(x: u64) -> u64 {
     x.wrapping_sub(0x20 * SWAR_LO) & !x & SWAR_HI
 }
 
-impl<'a> Parser<'a> {
-    pub fn new(input: &'a str) -> Self {
-        Self {
-            input,
-            bytes: input.as_bytes(),
-            pos: 0,
-            depth: 0,
-        }
-    }
-
-    /// Парсит документ целиком, требуя исчерпания входа.
-    pub fn parse_document(&mut self) -> Result<Value<'a>, Error> {
-        self.skip_ws();
-        let v = self.parse_value()?;
-        self.skip_ws();
-        if self.pos != self.bytes.len() {
-            return Err(self.err(ErrorKind::TrailingCharacters));
-        }
-        Ok(v)
-    }
-
-    #[inline]
-    fn parse_value(&mut self) -> Result<Value<'a>, Error> {
-        match self.peek() {
-            None => Err(self.err(ErrorKind::UnexpectedEof)),
-            Some(b'{') => self.parse_object(),
-            Some(b'[') => self.parse_array(),
-            Some(b'"') => self.parse_string().map(Value::Str),
-            Some(b't') => self.parse_lit(b"true", Value::Bool(true)),
-            Some(b'f') => self.parse_lit(b"false", Value::Bool(false)),
-            Some(b'n') => self.parse_lit(b"null", Value::Null),
-            Some(b'-') | Some(b'0'..=b'9') => self.parse_number(),
-            Some(c) => Err(self.err(ErrorKind::UnexpectedChar(c))),
-        }
-    }
-
+impl<'a> TapeParser<'a> {
     #[inline]
     fn peek(&self) -> Option<u8> {
         self.bytes.get(self.pos).copied()
     }
 
     #[inline]
-    fn skip_ws(&mut self) {
-        // быстрый отказ: в компактном JSON между токенами обычно нет пробелов
-        match self.bytes.get(self.pos) {
-            Some(b' ' | b'\t' | b'\n' | b'\r') => self.skip_ws_slow(),
-            _ => {}
+    fn err(&self, kind: ErrorKind) -> Error {
+        Error {
+            position: self.pos,
+            kind,
         }
+    }
+
+    #[inline]
+    fn err_at(&self, pos: usize, kind: ErrorKind) -> Error {
+        Error { position: pos, kind }
+    }
+
+    #[inline]
+    fn skip_ws(&mut self) {
+        if let Some(b' ' | b'\t' | b'\n' | b'\r') = self.bytes.get(self.pos) { self.skip_ws_slow() }
     }
 
     fn skip_ws_slow(&mut self) {
@@ -221,12 +525,28 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_lit(&mut self, lit: &[u8], value: Value<'a>) -> Result<Value<'a>, Error> {
+    fn parse_value(&mut self) -> Result<(), Error> {
+        match self.peek() {
+            None => Err(self.err(ErrorKind::UnexpectedEof)),
+            Some(b'{') => self.parse_object(),
+            Some(b'[') => self.parse_array(),
+            Some(b'"') => self.parse_string(),
+            Some(b't') => self.parse_lit(b"true", TAG_BOOL, 1),
+            Some(b'f') => self.parse_lit(b"false", TAG_BOOL, 0),
+            Some(b'n') => self.parse_lit(b"null", TAG_NULL, 0),
+            Some(b'-') | Some(b'0'..=b'9') => self.parse_number(),
+            Some(c) => Err(self.err(ErrorKind::UnexpectedChar(c))),
+        }
+    }
+
+    /// Литерал (true/false/null): узел пишется сразу.
+    fn parse_lit(&mut self, lit: &[u8], tag: u32, a: u32) -> Result<(), Error> {
         if self.bytes.len() - self.pos >= lit.len()
             && &self.bytes[self.pos..self.pos + lit.len()] == lit
         {
             self.pos += lit.len();
-            Ok(value)
+            self.tape.push(Node { hdr: tag, a, b: 0 });
+            Ok(())
         } else {
             Err(self.err(ErrorKind::InvalidLiteral))
         }
@@ -239,7 +559,7 @@ impl<'a> Parser<'a> {
     /// mul/div возвращают корректно округлённый результат точной операции —
     /// он совпадает с результатом `str::parse::<f64>` (тоже корректно
     /// округляющего то же вещественное число). Всё остальное — fallback.
-    fn parse_number(&mut self) -> Result<Value<'a>, Error> {
+    fn parse_number(&mut self) -> Result<(), Error> {
         let start = self.pos;
         let neg = self.peek() == Some(b'-');
         if neg {
@@ -315,44 +635,73 @@ impl<'a> Parser<'a> {
         }
 
         // --- сборка значения (быстрый путь)
-        if !overflow && mant <= (1u64 << 53) {
+        let value: f64 = if !overflow && mant <= (1u64 << 53) {
             let mf = mant as f64;
             let sign = if neg { -1.0f64 } else { 1.0f64 };
             if !has_exp {
                 if frac_digits == 0 {
                     // целое, включая -0.0 (семантика JSON "-0")
-                    return Ok(Value::Number(if neg { -mf } else { mf }));
+                    if neg { -mf } else { mf }
+                } else if frac_digits <= 22 {
+                    sign * (mf / POW10[frac_digits as usize])
+                } else {
+                    // frac_digits > 22 невозможно при mant <= 2^53? возможно:
+                    // "0.000...0001" — ведущие нули дробной части
+                    return self.number_fallback(start);
                 }
-                if frac_digits <= 22 {
-                    return Ok(Value::Number(sign * (mf / POW10[frac_digits as usize])));
-                }
-            } else if exp_shift >= 0 && exp_shift <= 22 {
-                return Ok(Value::Number(sign * (mf * POW10[exp_shift as usize])));
-            } else if exp_shift < 0 && exp_shift >= -22 {
-                return Ok(Value::Number(sign * (mf / POW10[(-exp_shift) as usize])));
+            } else if (0..=22).contains(&exp_shift) {
+                sign * (mf * POW10[exp_shift as usize])
+            } else if (-22..0).contains(&exp_shift) {
+                sign * (mf / POW10[(-exp_shift) as usize])
+            } else {
+                return self.number_fallback(start);
             }
-        }
+        } else {
+            return self.number_fallback(start);
+        };
 
-        // --- fallback: полное значение строки (грамматика уже проверена)
-        let text = &self.input[start..self.pos];
-        text.parse::<f64>()
-            .map(Value::Number)
-            .map_err(|_| self.err(ErrorKind::InvalidNumber))
+        let bits = value.to_bits();
+        self.tape.push(Node {
+            hdr: TAG_NUMBER,
+            a: bits as u32,
+            b: (bits >> 32) as u32,
+        });
+        Ok(())
     }
 
-    /// Быстрый путь: строка без escape-последовательностей — zero-copy.
+    /// Fallback: полное значение строки (грамматика уже проверена).
+    fn number_fallback(&mut self, start: usize) -> Result<(), Error> {
+        let text = &self.input[start..self.pos];
+        let value = text
+            .parse::<f64>()
+            .map_err(|_| self.err(ErrorKind::InvalidNumber))?;
+        let bits = value.to_bits();
+        self.tape.push(Node {
+            hdr: TAG_NUMBER,
+            a: bits as u32,
+            b: (bits >> 32) as u32,
+        });
+        Ok(())
+    }
+
+    /// Строка: zero-copy (fast path) или декодирование в owned-буфер.
     ///
     /// Инвариант безопасности срезов: сканируем байты, но останавливаемся
     /// только на ASCII-байтах (`"`, `\`, control). Любая остановка — граница
     /// символа UTF-8, поэтому срезы `input[start..pos]` всегда валидны.
-    fn parse_string(&mut self) -> Result<Cow<'a, str>, Error> {
+    fn parse_string(&mut self) -> Result<(), Error> {
         self.pos += 1; // открывающая кавычка
         let start = self.pos;
         match self.scan_plain(start)? {
             StringScan::Closed(close) => {
-                let s = &self.input[start..close];
+                let len = close - start;
                 self.pos = close + 1;
-                Ok(Cow::Borrowed(s))
+                self.tape.push(Node {
+                    hdr: TAG_STR | FLAG_STR_BORROWED,
+                    a: start as u32,
+                    b: len as u32,
+                });
+                Ok(())
             }
             StringScan::Escape(bs) => {
                 self.pos = bs;
@@ -394,17 +743,19 @@ impl<'a> Parser<'a> {
     /// Медленный путь (v0.4, полный рерайт): вход содержит escape-последовательности.
     ///
     /// Фаза 1: SWAR-прескан содержимого до НАСТОЯЩЕЙ закрывающей кавычки
-    /// (escaped `\\"` пропускается по чётности backslash-ов), попутно считаем
+    /// (escaped `\"` пропускается по чётности backslash-ов), попутно считаем
     /// backslash-ы. Итог: точная граница строки и точная верхняя оценка
-    /// ёмкости результата (len - backslashes) — ровно одна аллокация.
-    /// Фаза 2: декодирование — SWAR-чанки между escape копируются целиком,
-    /// декодируются только сами escape. Ошибки — с абсолютной позицией.
-    fn parse_string_slow(&mut self, start: usize) -> Result<Cow<'a, str>, Error> {
+    /// ёмкости результата (len - backslashes).
+    /// Фаза 2: декодирование в ОБЩИЙ owned-буфер документа (ноль аллокаций
+    /// на строку) — SWAR-чанки между escape копируются целиком.
+    fn parse_string_slow(&mut self, start: usize) -> Result<(), Error> {
         let (close, bs_count) = self.scan_to_close(start)?;
         let raw = &self.input[start..close];
-        let mut out = String::with_capacity(raw.len().saturating_sub(bs_count));
         let bytes = raw.as_bytes();
         let bslash_mask = swar_broadcast(b'\\');
+        // резерв: каждый backslash экономит минимум 1 байт
+        self.owned.reserve(bytes.len().saturating_sub(bs_count));
+        let owned_offset = self.owned.len();
         let mut i = 0usize;
         while i < bytes.len() {
             // SWAR: ищем backslash или control-байт
@@ -418,22 +769,19 @@ impl<'a> Parser<'a> {
                 }
                 break;
             }
-            let stop = {
-                let mut s = None;
-                while j < bytes.len() {
-                    let c = bytes[j];
-                    if c == b'\\' || c < 0x20 {
-                        s = Some(j);
-                        break;
-                    }
-                    j += 1;
+            let mut hit = None;
+            while j < bytes.len() {
+                let c = bytes[j];
+                if c == b'\\' || c < 0x20 {
+                    hit = Some(j);
+                    break;
                 }
-                s
-            };
-            let stop = match stop {
+                j += 1;
+            }
+            let stop = match hit {
                 Some(bs) => bs,
                 None => {
-                    out.push_str(&raw[i..]);
+                    self.owned.push_str(&raw[i..]);
                     break;
                 }
             };
@@ -441,7 +789,7 @@ impl<'a> Parser<'a> {
                 return Err(self.err_at(start + stop, ErrorKind::ControlCharInString));
             }
             if stop > i {
-                out.push_str(&raw[i..stop]);
+                self.owned.push_str(&raw[i..stop]);
             }
             // декодируем escape: bytes[stop] == '\\'
             let e = match bytes.get(stop + 1) {
@@ -450,35 +798,35 @@ impl<'a> Parser<'a> {
             };
             match e {
                 b'"' => {
-                    out.push('"');
+                    self.owned.push('"');
                     i = stop + 2;
                 }
                 b'\\' => {
-                    out.push('\\');
+                    self.owned.push('\\');
                     i = stop + 2;
                 }
                 b'/' => {
-                    out.push('/');
+                    self.owned.push('/');
                     i = stop + 2;
                 }
                 b'b' => {
-                    out.push('\u{0008}');
+                    self.owned.push('\u{0008}');
                     i = stop + 2;
                 }
                 b'f' => {
-                    out.push('\u{000C}');
+                    self.owned.push('\u{000C}');
                     i = stop + 2;
                 }
                 b'n' => {
-                    out.push('\n');
+                    self.owned.push('\n');
                     i = stop + 2;
                 }
                 b'r' => {
-                    out.push('\r');
+                    self.owned.push('\r');
                     i = stop + 2;
                 }
                 b't' => {
-                    out.push('\t');
+                    self.owned.push('\t');
                     i = stop + 2;
                 }
                 b'u' => {
@@ -486,7 +834,7 @@ impl<'a> Parser<'a> {
                     let hi = hex4(bytes, at)
                         .ok_or_else(|| self.err_at(start + at, ErrorKind::InvalidUnicodeEscape))?;
                     if (0xD800..0xDC00).contains(&hi) {
-                        // старший суррогат: ожидаем \\uYYYY младший суррогат
+                        // старший суррогат: ожидаем \uYYYY младший суррогат
                         if bytes.get(at + 4) == Some(&b'\\') && bytes.get(at + 5) == Some(&b'u') {
                             let lo_at = at + 6;
                             let lo = hex4(bytes, lo_at).ok_or_else(|| {
@@ -497,7 +845,7 @@ impl<'a> Parser<'a> {
                                 let ch = char::from_u32(c).ok_or_else(|| {
                                     self.err_at(start + at, ErrorKind::InvalidUnicodeEscape)
                                 })?;
-                                out.push(ch);
+                                self.owned.push(ch);
                                 i = lo_at + 4;
                             } else {
                                 return Err(self.err_at(start + at, ErrorKind::LoneSurrogate));
@@ -509,7 +857,7 @@ impl<'a> Parser<'a> {
                         return Err(self.err_at(start + at, ErrorKind::LoneSurrogate));
                     } else {
                         match char::from_u32(hi) {
-                            Some(c) => out.push(c),
+                            Some(c) => self.owned.push(c),
                             None => {
                                 return Err(
                                     self.err_at(start + at, ErrorKind::InvalidUnicodeEscape)
@@ -522,12 +870,18 @@ impl<'a> Parser<'a> {
                 _ => return Err(self.err_at(start + stop, ErrorKind::InvalidEscape)),
             }
         }
+        let len = self.owned.len() - owned_offset;
         self.pos = close + 1;
-        Ok(Cow::Owned(out))
+        self.tape.push(Node {
+            hdr: TAG_STR, // owned
+            a: owned_offset as u32,
+            b: len as u32,
+        });
+        Ok(())
     }
 
     /// SWAR-прескан содержимого строки до настоящей закрывающей кавычки.
-    /// Возвращает (позиция кавычки, число backslash-ов). Escaped `\\"`
+    /// Возвращает (позиция кавычки, число backslash-ов). Escaped `\"`
     /// (нечётное число предшествующих backslash-ов) пропускается.
     fn scan_to_close(&self, from: usize) -> Result<(usize, usize), Error> {
         let bytes = self.bytes;
@@ -554,7 +908,7 @@ impl<'a> Parser<'a> {
                             nb += 1;
                             k -= 1;
                         }
-                        if nb % 2 == 0 {
+                        if nb.is_multiple_of(2) {
                             return Ok((i, bs_count));
                         }
                         i += 1;
@@ -579,7 +933,7 @@ impl<'a> Parser<'a> {
                         nb += 1;
                         k -= 1;
                     }
-                    if nb % 2 == 0 {
+                    if nb.is_multiple_of(2) {
                         return Ok((i, bs_count));
                     }
                     i += 1;
@@ -595,26 +949,49 @@ impl<'a> Parser<'a> {
         Err(self.err_at(len, ErrorKind::UnexpectedEof))
     }
 
-    fn parse_array(&mut self) -> Result<Value<'a>, Error> {
+    fn parse_array(&mut self) -> Result<(), Error> {
         self.enter()?;
         self.pos += 1; // `[`
         self.skip_ws();
-        let mut items = Vec::with_capacity(4); // типичный маленький массив
+        let head = self.tape.len();
+        self.tape.push(Node {
+            hdr: TAG_ARRAY,
+            a: 0,
+            b: 0, // индекс CLOSE-узла, патчится ниже
+        });
+        let mut count: u32 = 0;
         if self.peek() == Some(b']') {
             self.pos += 1;
             self.depth -= 1;
-            return Ok(Value::Array(items));
+            let close = self.tape.len();
+            self.tape.push(Node {
+                hdr: TAG_CLOSE,
+                a: head as u32,
+                b: 0,
+            });
+            self.tape[head].a = close as u32; // детей нет
+            self.tape[head].b = close as u32;
+            return Ok(());
         }
         loop {
             self.skip_ws();
-            items.push(self.parse_value()?);
+            self.parse_value()?;
+            count += 1;
             self.skip_ws();
             match self.peek() {
                 Some(b',') => self.pos += 1,
                 Some(b']') => {
                     self.pos += 1;
                     self.depth -= 1;
-                    return Ok(Value::Array(items));
+                    let close = self.tape.len();
+                    self.tape.push(Node {
+                        hdr: TAG_CLOSE,
+                        a: head as u32,
+                        b: count,
+                    });
+                    self.tape[head].a = head as u32 + 1; // первый ребёнок
+                    self.tape[head].b = close as u32;
+                    return Ok(());
                 }
                 Some(c) => return Err(self.err(ErrorKind::UnexpectedChar(c))),
                 None => return Err(self.err(ErrorKind::UnexpectedEof)),
@@ -622,16 +999,29 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_object(&mut self) -> Result<Value<'a>, Error> {
+    fn parse_object(&mut self) -> Result<(), Error> {
         self.enter()?;
         self.pos += 1; // `{`
         self.skip_ws();
-        // типичный объект payload'а браузера: < 8 пар — одна аллокация
-        let mut pairs: Vec<(Cow<'a, str>, Value<'a>)> = Vec::with_capacity(8);
+        let head = self.tape.len();
+        self.tape.push(Node {
+            hdr: TAG_OBJECT,
+            a: 0,
+            b: 0,
+        });
+        let mut pairs: u32 = 0;
         if self.peek() == Some(b'}') {
             self.pos += 1;
             self.depth -= 1;
-            return Ok(Value::Object(pairs));
+            let close = self.tape.len();
+            self.tape.push(Node {
+                hdr: TAG_CLOSE,
+                a: head as u32,
+                b: 0,
+            });
+            self.tape[head].a = close as u32; // пар нет
+            self.tape[head].b = close as u32;
+            return Ok(());
         }
         loop {
             self.skip_ws();
@@ -640,7 +1030,7 @@ impl<'a> Parser<'a> {
                 Some(c) => return Err(self.err(ErrorKind::UnexpectedChar(c))),
                 None => return Err(self.err(ErrorKind::UnexpectedEof)),
             }
-            let key = self.parse_string()?;
+            self.parse_string()?; // ключ
             self.skip_ws();
             match self.peek() {
                 Some(b':') => self.pos += 1,
@@ -648,34 +1038,43 @@ impl<'a> Parser<'a> {
                 None => return Err(self.err(ErrorKind::UnexpectedEof)),
             }
             self.skip_ws();
-            let value = self.parse_value()?;
-            pairs.push((key, value));
+            self.parse_value()?; // значение
+            pairs += 1;
             self.skip_ws();
             match self.peek() {
                 Some(b',') => self.pos += 1,
                 Some(b'}') => {
                     self.pos += 1;
                     self.depth -= 1;
-                    return Ok(Value::Object(pairs));
+                    let close = self.tape.len();
+                    self.tape.push(Node {
+                        hdr: TAG_CLOSE,
+                        a: head as u32,
+                        b: pairs,
+                    });
+                    self.tape[head].a = head as u32 + 1; // первый ключ
+                    self.tape[head].b = close as u32;
+                    return Ok(());
                 }
                 Some(c) => return Err(self.err(ErrorKind::UnexpectedChar(c))),
                 None => return Err(self.err(ErrorKind::UnexpectedEof)),
             }
         }
     }
+}
 
-    #[inline]
-    fn err(&self, kind: ErrorKind) -> Error {
-        Error {
-            position: self.pos,
-            kind,
+/// Вкидывание цифры в мантиссу с детекцией переполнения u64.
+#[inline]
+fn fold_digit(mut mant: u64, c: u8, overflow: &mut bool) -> u64 {
+    if !*overflow {
+        let d = (c - b'0') as u64;
+        if mant > (u64::MAX - d) / 10 {
+            *overflow = true;
+        } else {
+            mant = mant * 10 + d;
         }
     }
-
-    #[inline]
-    fn err_at(&self, pos: usize, kind: ErrorKind) -> Error {
-        Error { position: pos, kind }
-    }
+    mant
 }
 
 /// 4 hex-цифры, начиная с `at` (внутри `bytes`); None — не hex или выход за границы.
@@ -696,19 +1095,43 @@ fn hex4(bytes: &[u8], at: usize) -> Option<u32> {
     Some(v)
 }
 
-/// Вкидывание цифры в мантиссу с детекцией переполнения u64.
-#[inline]
-fn fold_digit(mut mant: u64, c: u8, overflow: &mut bool) -> u64 {
-    if !*overflow {
-        let d = (c - b'0') as u64;
-        if mant > (u64::MAX - d) / 10 {
-            *overflow = true;
-        } else {
-            mant = mant * 10 + d;
-        }
-    }
-    mant
+// ---------------------------------------------------------------------------
+// Ошибки
+// ---------------------------------------------------------------------------
+
+/// Вид ошибки парсинга.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorKind {
+    UnexpectedEof,
+    UnexpectedChar(u8),
+    InvalidNumber,
+    InvalidEscape,
+    InvalidUnicodeEscape,
+    LoneSurrogate,
+    ControlCharInString,
+    InvalidLiteral,
+    MaxDepthExceeded,
+    TrailingCharacters,
 }
+
+/// Ошибка парсинга с позицией во входе (в байтах).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Error {
+    pub position: usize,
+    pub kind: ErrorKind,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "JSON error at byte {}: {:?}", self.position, self.kind)
+    }
+}
+
+impl std::error::Error for Error {}
+
+// ---------------------------------------------------------------------------
+// Синтетические документы
+// ---------------------------------------------------------------------------
 
 /// Синтетические документы, повторяющие форму реальных payload'ов Firefox.
 /// Используются в тестах, бенчмарках и профилировании.
@@ -784,72 +1207,82 @@ mod tests {
     use super::*;
     use serde_json::Value as SValue;
 
-    fn parse_ok(s: &str) -> Value<'_> {
+    fn parse_ok(s: &str) -> Document<'_> {
         parse(s).expect("should parse")
     }
 
     #[test]
     fn primitives() {
-        assert!(parse_ok("null").is_null());
-        assert_eq!(parse_ok("true"), Value::Bool(true));
-        assert_eq!(parse_ok("false"), Value::Bool(false));
-        assert_eq!(parse_ok("0"), Value::Number(0.0));
-        assert_eq!(parse_ok("-1"), Value::Number(-1.0));
-        assert_eq!(parse_ok("3.14"), Value::Number(3.14));
-        assert_eq!(parse_ok("1e10"), Value::Number(1e10));
-        assert_eq!(parse_ok("-2.5e-3"), Value::Number(-2.5e-3));
-        assert_eq!(
-            parse_ok("  [ 1 , 2 ] "),
-            Value::Array(vec![Value::Number(1.0), Value::Number(2.0)])
-        );
-        assert_eq!(
-            parse_ok("{}"),
-            Value::Object(vec![])
-        );
+        assert!(parse_ok("null").root().is_null());
+        assert_eq!(parse_ok("true").root().as_bool(), Some(true));
+        assert_eq!(parse_ok("false").root().as_bool(), Some(false));
+        assert_eq!(parse_ok("0").root().as_f64(), Some(0.0));
+        assert_eq!(parse_ok("-1").root().as_f64(), Some(-1.0));
+        // 3.14 — литерал из документа (не константа PI)
+        assert_eq!(parse_ok("123.321").root().as_f64(), Some(123.321_f64));
+        assert_eq!(parse_ok("1e10").root().as_f64(), Some(1e10));
+        assert_eq!(parse_ok("-2.5e-3").root().as_f64(), Some(-2.5e-3));
+        let doc = parse_ok("  [ 1 , 2 ] ");
+        let arr_ref = doc.root();
+        assert_eq!(arr_ref.len(), Some(2));
+        assert_eq!(arr_ref.at(0).unwrap().as_f64(), Some(1.0));
+        assert_eq!(arr_ref.at(1).unwrap().as_f64(), Some(2.0));
+        let doc = parse_ok("{}");
+        assert_eq!(doc.root().len(), Some(0));
     }
 
     #[test]
     fn strings_and_escapes() {
-        assert_eq!(parse_ok(r#""hello""#), Value::Str("hello".into()));
-        assert_eq!(
-            parse_ok(r#""a\nb\t\"q\"\\/""#),
-            Value::Str("a\nb\t\"q\"\\/".into())
-        );
-        assert_eq!(parse_ok(r#""\u0041""#), Value::Str("A".into()));
-        assert_eq!(parse_ok(r#""\ud83d\ude00""#), Value::Str("😀".into()));
+        assert_eq!(parse_ok(r#""hello""#).root().as_str(), Some("hello"));
+        let doc = parse_ok(r#""a\nb\t\"q\"\\/""#);
+        assert_eq!(doc.root().as_str(), Some("a\nb\t\"q\"\\/"));
+        assert_eq!(parse_ok(r#""\u0041""#).root().as_str(), Some("A"));
+        assert_eq!(parse_ok(r#""\ud83d\ude00""#).root().as_str(), Some("😀"));
         // ключи с escape тоже декодируются
-        let v = parse_ok(r#"{"ключ": 1, "esc\u0041": 2}"#);
-        assert_eq!(v.get("ключ"), Some(&Value::Number(1.0)));
-        assert_eq!(v.get("escA"), Some(&Value::Number(2.0)));
+        let doc = parse_ok(r#"{"ключ": 1, "esc\u0041": 2}"#);
+        assert_eq!(doc.get("ключ").unwrap().as_f64(), Some(1.0));
+        assert_eq!(doc.get("escA").unwrap().as_f64(), Some(2.0));
     }
 
     #[test]
     fn borrowed_vs_owned() {
-        let v = parse_ok(r#"["abc", "a\"b"]"#);
-        if let Value::Array(items) = &v {
-            assert!(matches!(&items[0], Value::Str(Cow::Borrowed(_))));
-            assert!(matches!(&items[1], Value::Str(Cow::Owned(_))));
-        } else {
-            panic!("expected array");
-        }
+        let doc = parse_ok(r#"["abc", "a\"b"]"#);
+        let root = doc.root();
+        assert_eq!(root.at(0).unwrap().str_is_borrowed(), Some(true));
+        assert_eq!(root.at(1).unwrap().str_is_borrowed(), Some(false));
+        // ключи: без escape — borrowed, с escape — owned
+        let doc = parse_ok(r#"{"plain": 1, "esc\u0041": 2}"#);
+        let obj = doc.root().as_object().unwrap();
+        assert!(obj.key_is_borrowed(0));
+        assert!(!obj.key_is_borrowed(1));
     }
 
     #[test]
     fn nested_and_get() {
-        let doc = r#"{"a":{"b":[1,2,{"c":"deep"}]}}"#;
-        let v = parse_ok(doc);
-        let deep = v
+        let doc = parse_ok(r#"{"a":{"b":[1,2,{"c":"deep"}]}}"#);
+        let deep = doc
             .get("a")
             .unwrap()
             .get("b")
             .unwrap()
-            .as_array()
-            .unwrap()[2]
+            .at(2)
+            .unwrap()
             .get("c")
             .unwrap()
             .as_str()
             .unwrap();
         assert_eq!(deep, "deep");
+    }
+
+    #[test]
+    fn object_iteration() {
+        let doc = parse_ok(r#"{"x":1,"y":2,"x":3}"#);
+        let obj = doc.root().as_object().unwrap();
+        let keys: Vec<&str> = obj.iter().map(|(k, _)| k).collect();
+        assert_eq!(keys, vec!["x", "y", "x"]);
+        // get возвращает первое вхождение
+        assert_eq!(doc.get("x").unwrap().as_f64(), Some(1.0));
+        assert_eq!(obj.value_at(2).as_f64(), Some(3.0));
     }
 
     #[test]
@@ -904,18 +1337,43 @@ mod tests {
     /// Структурная эквивалентность с serde_json на составном документе.
     #[test]
     fn matches_serde_json() {
-        let doc = sample::session(50);
-        let ours = parse(&doc).unwrap();
-        let serde_v: SValue = serde_json::from_str(&doc).unwrap();
-        assert!(equiv(&ours, &serde_v));
+        let doc_str = sample::session(50);
+        let doc = parse(&doc_str).unwrap();
+        let serde_v: SValue = serde_json::from_str(&doc_str).unwrap();
+        assert!(equiv(doc.root(), &serde_v));
+    }
+
+    fn equiv(a: NodeRef<'_, '_>, b: &SValue) -> bool {
+        match (a.kind(), b) {
+            (Kind::Null, SValue::Null) => true,
+            (Kind::Bool, SValue::Bool(y)) => a.as_bool() == Some(*y),
+            (Kind::Number, SValue::Number(y)) => {
+                a.as_f64() == Some(y.as_f64().unwrap_or(f64::NAN))
+            }
+            (Kind::Str, SValue::String(y)) => a.as_str() == Some(y.as_str()),
+            (Kind::Array, SValue::Array(y)) => {
+                let arr = a.as_array().unwrap();
+                arr.len() == y.len()
+                    && arr
+                        .iter()
+                        .zip(y.iter())
+                        .all(|(n, sv)| equiv(n, sv))
+            }
+            (Kind::Object, SValue::Object(y)) => {
+                let obj = a.as_object().unwrap();
+                obj.len() == y.len()
+                    && obj
+                        .iter()
+                        .all(|(k, v)| y.get(k).map(|sv| equiv(v, sv)).unwrap_or(false))
+            }
+            _ => false,
+        }
     }
 
     /// Числа: ground truth — `str::parse::<f64>` (корректно округлённый,
     /// бит-в-бит); serde_json — с допуском 1 ulp (его собственный парсер
     /// на редких числах отстаёт на 1 ulp от корректного округления —
     /// см. serde-rs/json issues; мы совпадаем со std бит-в-бит).
-    /// Покрывает быстрый путь (int/frac/exp), границы 2^53, 10^22, -0 и
-    /// fallback (длинные числа, большие экспоненты).
     #[test]
     fn numbers_match_serde_json() {
         let cases = [
@@ -927,8 +1385,8 @@ mod tests {
             "1.7976931348623157e308", "5e-324",
         ];
         for c in cases {
-            let ours = parse(c).unwrap_or_else(|e| panic!("{c}: {e}"));
-            let a = ours.as_f64().unwrap();
+            let doc = parse(c).unwrap_or_else(|e| panic!("{c}: {e}"));
+            let a = doc.root().as_f64().unwrap();
             // ground truth: корректно округлённый std-парсер — бит-в-бит
             let truth: f64 = c.parse().unwrap();
             assert_eq!(a.to_bits(), truth.to_bits(), "bits mismatch vs std for {c}");
@@ -955,8 +1413,7 @@ mod tests {
         (a - b).abs() <= scale * f64::EPSILON
     }
 
-    /// Property-тест: случайные числа из ограниченного диапазона должны
-    /// битово совпадать с serde_json.
+    /// Property-тест: случайные числа должны битово совпадать со std.
     #[test]
     fn random_numbers_match_serde_json() {
         struct Lcg(u64);
@@ -976,10 +1433,14 @@ mod tests {
             let frac_part = if frac_len == 0 {
                 String::new()
             } else {
-                format!("{:0width$}", rng.next() % 10u64.pow(frac_len as u32), width = frac_len as usize)
+                format!(
+                    "{:0width$}",
+                    rng.next() % 10u64.pow(frac_len as u32),
+                    width = frac_len as usize
+                )
             };
             let exp = (rng.next() % 44) as i64 - 22;
-            let neg = rng.next() % 2 == 0;
+            let neg = rng.next().is_multiple_of(2);
             let mut s = String::new();
             if neg {
                 s.push('-');
@@ -989,15 +1450,15 @@ mod tests {
                 s.push('.');
                 s.push_str(&frac_part);
             }
-            if rng.next() % 2 == 0 {
+            if rng.next().is_multiple_of(2) {
                 s.push('e');
-                if rng.next() % 2 == 0 {
+                if rng.next().is_multiple_of(2) {
                     s.push('+');
                 }
                 s.push_str(&exp.to_string());
             }
-            let ours = parse(&s).unwrap_or_else(|e| panic!("{s}: {e}"));
-            let a = ours.as_f64().unwrap();
+            let doc = parse(&s).unwrap_or_else(|e| panic!("{s}: {e}"));
+            let a = doc.root().as_f64().unwrap();
             // ground truth: std (корректно округлённый) — бит-в-бит
             let truth: f64 = s.parse().unwrap();
             assert_eq!(a.to_bits(), truth.to_bits(), "bits mismatch vs std for {s}");
@@ -1008,61 +1469,59 @@ mod tests {
         }
     }
 
-    fn equiv(a: &Value<'_>, b: &SValue) -> bool {
-        match (a, b) {
-            (Value::Null, SValue::Null) => true,
-            (Value::Bool(x), SValue::Bool(y)) => x == y,
-            (Value::Number(x), SValue::Number(y)) => *x == y.as_f64().unwrap_or(f64::NAN),
-            (Value::Str(x), SValue::String(y)) => x == y,
-            (Value::Array(x), SValue::Array(y)) => {
-                x.len() == y.len()
-                    && x.iter()
-                        .zip(y.iter())
-                        .all(|(a, b)| equiv(a, b))
-            }
-            (Value::Object(x), SValue::Object(y)) => {
-                x.len() == y.len()
-                    && x.iter()
-                        .all(|(k, v)| y.get(k.as_ref()).map(|b| equiv(v, b)).unwrap_or(false))
-            }
-            _ => false,
-        }
-    }
-
     #[test]
     fn sample_document_parses() {
-        let doc = sample::session(1000);
-        let v = parse(&doc).unwrap();
-        let tabs = v
+        let doc_str = sample::session(1000);
+        let doc = parse(&doc_str).unwrap();
+        let tabs = doc
             .get("windows")
             .unwrap()
-            .as_array()
-            .unwrap()[0]
-            .get("tabs")
+            .at(0)
             .unwrap()
-            .as_array()
+            .get("tabs")
             .unwrap();
-        assert_eq!(tabs.len(), 1000);
-        assert_eq!(tabs[0].get("id"), Some(&Value::Number(0.0)));
-        assert_eq!(tabs[0].get("active"), Some(&Value::Bool(true)));
+        assert_eq!(tabs.len(), Some(1000));
+        assert_eq!(tabs.at(0).unwrap().get("id").unwrap().as_f64(), Some(0.0));
+        assert_eq!(
+            tabs.at(0).unwrap().get("active").unwrap().as_bool(),
+            Some(true)
+        );
+        // url содержит \u0026 — owned; ключи — borrowed
+        let url = tabs.at(0).unwrap().get("url").unwrap();
+        assert_eq!(url.str_is_borrowed(), Some(false));
+        assert!(url.as_str().unwrap().contains("&tab=0"));
     }
 
     #[test]
     fn sample_nums_and_strs_parse() {
-        let nums_doc = sample::nums(100);
-        let v = parse(&nums_doc).unwrap();
-        let items = v.as_array().unwrap();
-        assert_eq!(items.len(), 100);
-        assert_eq!(items[7].get("id"), Some(&Value::Number(7.0)));
-        assert_eq!(items[7].get("x"), Some(&Value::Number(7.5)));
-        assert_eq!(items[7].get("h"), Some(&Value::Number(-7.0)));
+        let nums_doc_str = sample::nums(100);
+        let doc = parse(&nums_doc_str).unwrap();
+        let arr = doc.root();
+        assert_eq!(arr.len(), Some(100));
+        assert_eq!(arr.at(7).unwrap().get("id").unwrap().as_f64(), Some(7.0));
+        assert_eq!(arr.at(7).unwrap().get("x").unwrap().as_f64(), Some(7.5));
+        assert_eq!(arr.at(7).unwrap().get("h").unwrap().as_f64(), Some(-7.0));
 
-        let strs_doc = sample::strs(100);
-        let v = parse(&strs_doc).unwrap();
-        let items = v.as_array().unwrap();
-        assert_eq!(items.len(), 100);
-        assert!(items[0].get("url").unwrap().as_str().unwrap().starts_with("https://"));
+        let strs_doc_str = sample::strs(100);
+        let doc = parse(&strs_doc_str).unwrap();
+        let arr = doc.root();
+        assert_eq!(arr.len(), Some(100));
+        assert!(arr
+            .at(0)
+            .unwrap()
+            .get("url")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .starts_with("https://"));
         // etag содержит escape — должен декодироваться
-        assert!(items[0].get("etag").unwrap().as_str().unwrap().contains("0x"));
+        assert!(arr
+            .at(0)
+            .unwrap()
+            .get("etag")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .contains("0x"));
     }
 }
