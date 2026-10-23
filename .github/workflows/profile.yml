@@ -124,7 +124,9 @@ jobs:
             export FOX_HOTSPOT_PARAS=500 FOX_HOTSPOT_ITERS=50
           fi
           valgrind --tool=callgrind --callgrind-out-file=callgrind.out target/release/examples/${{ matrix.example }}
-          callgrind_annotate callgrind.out | head -80 > callgrind-report.txt
+          # shell: bash на GitHub включает pipefail — не пайпим в head напрямую
+          callgrind_annotate callgrind.out > callgrind-full.txt 2>/dev/null || true
+          head -80 callgrind-full.txt > callgrind-report.txt
 
       - name: Hotspot summary
         shell: bash

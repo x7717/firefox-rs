@@ -25,7 +25,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          cargo bench --workspace -- --output-format bencher | tee bench-output.txt
+          # --benches: только criterion-бенчи; без него libtest-юнит-тесты
+          # получают --output-format bencher и падают (Unrecognized option)
+          cargo bench --workspace --benches -- --output-format bencher | tee bench-output.txt
 
       - name: Benchmark summary
         if: always()
