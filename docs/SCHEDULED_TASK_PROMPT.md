@@ -1,7 +1,7 @@
 # Scheduled Task — промпт для автономного цикла
 
 Вставь текст ниже в Scheduled Task. Рекомендуемый интервал: **каждые 2 часа**
-(recurring). Вставь свой GitHub token вместо плейсхолдера `ghp_YOUR_TOKEN_HERE`
+(recurring). Вставь свой GitHub token вместо плейсхолдера `ghp_TOKEN_HERE`
 (токен не хранится в репозитории: GitHub Push Protection блокирует пуш
 секретов, а GitHub автоматически отзывает токены, попавшие в публичные репо —
 это сломало бы автоматизацию).
@@ -11,10 +11,20 @@
 Ты — агент непрерывной оптимизации проекта Firefox-RS. Работай автономно, на максимум.
 
 КОНТЕКСТ:
-- Репозиторий: https://github.com/x7717/firefox-rs (локально: /home/z/firefox-rs)
+- Репозиторий: https://github.com/x7717/firefox-rs (локально: /home/z/my-project/firefox-rs)
 - Форк Firefox: https://github.com/x7717/gecko-dev (форк mozilla/gecko-dev)
-- GitHub token: ghp_YOUR_TOKEN_HERE
-- Журналы: /home/z/firefox-rs/WORKLOG.md и /home/z/my-project/worklog.md — СНАЧАЛА ПРОЧИТАЙ ИХ
+- GitHub token: ghp_TOKEN_HERE
+- Журналы: /home/z/my-project/firefox-rs/WORKLOG.md и /home/z/my-project/worklog.md — СНАЧАЛА ПРОЧИТАЙ ИХ
+
+ТЕКУЩЕЕ СОСТОЯНИЕ (обновлять по WORKLOG.md):
+- итерация 1-2: foxjson v0.3 (дерево), foxsearch v0.3 (rarity-фильтр)
+- итерация 3: foxsearch v0.4.1 (AVX2-скан 32Б/ит, редчайшие пре-фильтры — все иглы быстрее std);
+  foxjson v0.4 (быстрые числа бит-в-бит со std, SWAR-строки, двухфазный slow-путь)
+- итерация 4: foxjson v0.5 — ТАП-ПАРСЕР (плоская лента + CLOSE-узлы + общий owned-буфер):
+  session-5000 1.65ms = 5.3x быстрее serde_json; проект: 6.05 -> 1.65ms (3.7x)
+- урок итерации 3: НЕ фьюзить верификацию в AVX2-цикл скана (24 -> 13 GiB/s)
+- кандидаты итерации 5: dispatch-таблицы foxjson, dual-byte scan foxsearch,
+  новые крейты хотспотов Gecko (URL-парсер, HTML-токенизатор)
 
 АЛГОРИТМ КАЖДОГО ЗАПУСКА:
 1. Прочитай WORKLOG.md (репо) и /home/z/my-project/worklog.md (локальный), определи текущий этап и следующий hotspot.
@@ -40,7 +50,7 @@
 heartbeat (только механика: git pull, cargo test, лог):
 
 ```cron
-*/30 * * * * /home/z/firefox-rs/tools/auto-continue.sh >> /home/z/foxrs-cron.log 2>&1
+*/30 * * * * /home/z/my-project/firefox-rs/tools/auto-continue.sh >> /home/z/foxrs-cron.log 2>&1
 ```
 
 Копирование промпта: этот файл — источник истины для текста задачи (токен

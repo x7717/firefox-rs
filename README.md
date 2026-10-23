@@ -4,6 +4,21 @@
 Каждое изменение доказывается числами: benchmark до/после + профилирование.
 Оптимизируем то, что профиль показывает самым тяжёлым.
 
+## Текущие результаты (итерация 4, тап-парсер + AVX2-скан)
+
+| Крейт | Бенчмарк | Эталон | Итог |
+|---|---|---|---|
+| foxjson | parse/session-5000 (1.3 МБ) | serde_json | **5.3x быстрее** (1.65 ms vs 8.73 ms, 795 MiB/s) |
+| foxjson | parse/nums-5000 | serde_json | **7.0x быстрее** |
+| foxjson | parse/strs-5000 | serde_json | **5.5x быстрее** |
+| foxjson | parse/small | serde_json | **5.1x быстрее** |
+| foxsearch | find/"Mozilla Corporation" | std::str::find | **1.9x быстрее** |
+| foxsearch | find/"zzz-absent-zzz" | std::str::find | **2.7x быстрее** |
+
+История session-5000: 6.05 ms (дерево, v0.1) -> 1.65 ms (тап, v0.5) — **3.7x за жизнь проекта**.
+Числа корректно округлены: foxjson бит-в-бит совпадает со `std str::parse` (точнее serde_json на 1 ulp).
+Все детали и история итераций — в [WORKLOG.md](WORKLOG.md).
+
 ## CI (работает автоматически)
 
 | Workflow | Что делает | Триггеры |
@@ -38,8 +53,10 @@ perf record -g -- target/release/examples/hotspot
 
 ```
 crates/
-  foxjson/     JSON-парсер: session store, prefs, telemetry (эталон: serde_json)
-  foxsearch/   SWAR-поиск байт/подстрок: URL classifier, text ops (эталон: std::str::find)
+  foxjson/     ТАП-парсер JSON (плоская лента узлов, ~15 аллокаций на документ):
+               session store, prefs, telemetry (эталон: serde_json)
+  foxsearch/   SIMD-поиск (AVX2-ядро 32 байт/итерацию + rarity-фильтры):
+               URL classifier, text ops (эталон: std::str::find)
 docs/
   ARCHITECTURE.md   стратегия «измеряй -> переписывай -> доказывай -> интегрируй»
   PROFILING.md      методология профилирования
