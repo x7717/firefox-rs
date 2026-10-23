@@ -4,7 +4,7 @@
 Каждое изменение доказывается числами: benchmark до/после + профилирование.
 Оптимизируем то, что профиль показывает самым тяжёлым.
 
-## Текущие результаты (итерация 6, однопроходный декодер escape-строк)
+## Текущие результаты (итерация 7: foxurl — третий крейт)
 
 | Крейт | Бенчмарк | Эталон | Итог |
 |---|---|---|---|
@@ -15,9 +15,13 @@
 | foxjson | parse/small | serde_json | **5.4x быстрее** |
 | foxsearch | find/"Mozilla Corporation" | std::str::find | **1.9x быстрее** |
 | foxsearch | find/"zzz-absent-zzz" | std::str::find | **2.7x быстрее** |
+| foxurl | parse/corpus-all (14 URL) | url | **1.70x быстрее** (2.40 µs vs 4.08 µs) |
+| foxurl | parse/URL с userinfo | url | **2.0x быстрее** |
+| foxurl | parse/URL с верхним регистром хоста | url | **2.7x быстрее** |
 
 История session-5000: 6.05 ms (дерево, v0.1) -> 1.65 ms (тап, v0.5) -> 1.34 ms (v0.6) -> **1.18 ms (v0.7)** — **5.1x за жизнь проекта**.
 Числа корректно округлены: foxjson бит-в-бит совпадает со `std str::parse` (точнее serde_json на 1 ulp).
+foxurl: zero-copy смещения, отложенная нормализация; сериализация байт-в-байт совпадает с `url` (тест-паритет на 30+ корпусных и 500 синтетических URL).
 Все детали и история итераций — в [WORKLOG.md](WORKLOG.md).
 
 ## CI (работает автоматически)
@@ -58,6 +62,8 @@ crates/
                session store, prefs, telemetry (эталон: serde_json)
   foxsearch/   SIMD-поиск (AVX2-ядро 32 байт/итерацию + rarity-фильтры):
                URL classifier, text ops (эталон: std::str::find)
+  foxurl/      WHATWG URL-парсер (zero-copy смещения + отложенная нормализация):
+               session store, history (эталон: url)
 docs/
   ARCHITECTURE.md   стратегия «измеряй -> переписывай -> доказывай -> интегрируй»
   PROFILING.md      методология профилирования

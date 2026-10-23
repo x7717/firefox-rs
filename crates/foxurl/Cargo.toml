@@ -1,0 +1,20 @@
+[package]
+name = "foxurl"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Fast WHATWG URL parser for Firefox hot paths (session store, history, telemetry)"
+publish = false
+
+[dependencies]
+
+[lib]
+bench = false # юнит-тесты lib не должны запускаться в bench-режиме (ломают --output-format bencher)
+
+[dev-dependencies]
+criterion = "0.5"
+url = "2"
+
+[[bench]]
+name = "url"
+harness = false

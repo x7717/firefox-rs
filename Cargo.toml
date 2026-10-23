@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/foxjson", "crates/foxsearch"]
+members = ["crates/foxjson", "crates/foxsearch", "crates/foxurl"]
 
 # Политика: каждый крейт = вынесенная горячая зона Firefox с честными
 # benchmark'ами против эталона (std / serde_json) и примером workload'а
