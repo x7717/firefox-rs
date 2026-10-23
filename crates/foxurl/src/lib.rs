@@ -17,6 +17,8 @@
 use std::borrow::Cow;
 use std::fmt;
 
+mod ipv6;
+
 // ---------------------------------------------------------------------------
 // Ошибки
 // ---------------------------------------------------------------------------
@@ -349,13 +351,33 @@ impl<'a> Url<'a> {
                 })?
                 + from;
             let inner = &self.raw[from + 1..close];
-            let ip: std::net::Ipv6Addr = inner.parse().map_err(|_| Error {
-                position: from + 1,
-                kind: ErrorKind::InvalidIpv6Address,
-            })?;
-            let s = ip.to_string();
-            if s != inner {
-                self.host_owned = Some(s);
+            // WHATWG-парсер без std (модуль ipv6): std Display печатает
+            // IPv4-mapped в смешанной форме RFC 5952 (`::ffff:10.0.0.1`),
+            // а WHATWG/`url` — чистой hex (`::ffff:a00:1`); плюс здесь
+            // сериализация в стековый буфер — ноль аллокаций на каноническом
+            // входе. Owned-хост хранится В СКОБКАХ (как в `url`).
+            match ipv6::parse(inner.as_bytes()) {
+                Some(pieces) => {
+                    let mut canon = [0u8; ipv6::CANON_BUF];
+                    let n = ipv6::serialize(&pieces, &mut canon);
+                    if &canon[..n] != inner.as_bytes() {
+                        let mut s = String::with_capacity(n + 2);
+                        s.push('[');
+                        s.push_str(
+                            std::str::from_utf8(&canon[..n])
+                                .expect("каноническая IPv6-форма — ASCII"),
+                        );
+                        s.push(']');
+                        self.host_owned = Some(s);
+                    }
+                    // канонический вход: заимствованный хост from..=close
+                }
+                None => {
+                    return Err(Error {
+                        position: from + 1,
+                        kind: ErrorKind::InvalidIpv6Address,
+                    })
+                }
             }
             host_end = close + 1;
             if host_end < end {
@@ -1348,5 +1370,60 @@ mod tests {
         assert_eq!(u.path(), "/pa%20th");
         assert_eq!(u.query(), Some("x=1"));
         assert_eq!(u.fragment(), Some("f"));
+    }
+
+    /// IPv6-хост: канонический вход — заимствованный (ноль аллокаций),
+    /// неканонический — owned В СКОБКАХ (паритет с `url`).
+    #[test]
+    fn ipv6_canonical_borrowed_and_brackets() {
+        // Канонический: заимствованный as_str, host_str со скобками.
+        let u = parse("https://[2001:db8::1]:8443/metrics").unwrap();
+        assert!(matches!(u.as_str(), Cow::Borrowed(_)));
+        assert_eq!(u.host_str().unwrap(), "[2001:db8::1]");
+        assert_eq!(u.port(), Some(8443));
+
+        // Неканонический (ведущие нули): скобки сохраняются, форма канонизована.
+        let u = parse("https://[2001:0db8::1]:8443/metrics").unwrap();
+        assert_eq!(u.as_str(), "https://[2001:db8::1]:8443/metrics");
+        assert_eq!(u.host_str().unwrap(), "[2001:db8::1]");
+
+        // Неканонический (верхний регистр hex).
+        let u = parse("https://[2001:DB8::1]/x").unwrap();
+        assert_eq!(u.as_str(), "https://[2001:db8::1]/x");
+
+        // Неканонический (полная форма 8 групп).
+        let u = parse("https://[0:0:0:0:0:0:0:1]/").unwrap();
+        assert_eq!(u.as_str(), "https://[::1]/");
+    }
+
+    /// IPv4-mapped IPv6: WHATWG/`url` — ЧИСТАЯ hex-форма (`::ffff:a00:1`),
+    /// НЕ смешанная RFC 5952 std-Display (`::ffff:10.0.0.1`).
+    #[test]
+    fn ipv6_ipv4_mapped_hex_not_dotted() {
+        let u = parse("https://[::FFFF:10.0.0.1]/y").unwrap();
+        assert_eq!(u.as_str(), "https://[::ffff:a00:1]/y");
+        assert_eq!(u.host_str().unwrap(), "[::ffff:a00:1]");
+
+        let u = parse("https://[::ffff:1.2.3.4]/").unwrap();
+        assert_eq!(u.as_str(), "https://[::ffff:102:304]/");
+    }
+
+    /// IPv6-отказы: паритет с `url` (зона, мусор, лишние piece'и).
+    #[test]
+    fn ipv6_rejections_match_url() {
+        for bad in [
+            "https://[fe80::1%25eth0]/z",
+            "https://[fe80::1%25]/z",
+            "https://[1:2:3:4:5:6:7:8:9]/",
+            "https://[1:2:3:4:5:6:7:]/",
+            "https://[1:2:3:4:5:6:7:8::]/",
+            "https://[:::]/",
+            "https://[1:2:3:4:5:6:1.2.3]/",
+            "https://[::1.2.3.256]/",
+            "https://[12345::]/",
+        ] {
+            assert!(parse(bad).is_err(), "должен быть отказ: {bad}");
+            assert!(url::Url::parse(bad).is_err(), "url тоже отказ: {bad}");
+        }
     }
 }
