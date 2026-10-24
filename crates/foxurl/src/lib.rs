@@ -39,6 +39,12 @@
 //! табличный (AUTH_TERM_*). parse/corpus-all -14%, canonical -13.8%
 //! (отрыв от url 2.83x -> 3.16x), CPU на профиле -14%.
 //!
+//! Итерация 17 (v0.8, ветка experiment/fused-auth-scan): СЛИТЫЙ
+//! AUTHORITY-СКАН — факты хоста собираются тем же проходом, что и
+//! терминаторы authority (таблица AUTH_SCAN_* — ровно 8 бит); второй
+//! проход scan_host_domain удалён. На бенч-ВМ результат НЕВОЗМОЖНО
+//! отделить от layout-шума (см. WORKLOG, сессия 13) — в main НЕ вошло.
+//!
 //! Ограничения v0.1 (документированы): не-ASCII хосты (IDNA/punycode) и
 //! file-специфика Windows (буквы дисков) не поддерживаются — `Err`.
 
@@ -455,23 +461,44 @@ fn parse_raw(raw: Cow<'_, str>) -> Result<Url<'_>, RawFail> {
 
 impl<'a> Url<'a> {
     /// Authority до '/', '\\', '?', '#'; затем путь/запрос/фрагмент.
+    ///
+    /// v0.8 СЛИТЫЙ СКАН: один проход по [start..len) находит терминатор
+    /// authority И собирает факты хоста из AUTH_SCAN_* (первое ':' —
+    /// порт, верхний регистр, '%', forbidden/не-ASCII). Второй проход
+    /// scan_host_domain по спану хоста удалён (архитектура v0.5 «один
+    /// проход вместо трёх» — теперь хост-спан читается ОДИН раз).
+    /// Факты накапливаются С ПОСЛЕДНЕГО '@' (сброс на '@'): ':' в
+    /// userinfo не становится портом, верхний регистр/percent/forbidden
+    /// userinfo не заражают хост. Инвариант WHATWG: '@' не терминирует
+    /// authority, последний '@' открывает хост.
+    ///
+    /// ТРЕБОВАНИЯ К КОДУ ГОРЯЧЕГО ЦИКЛА (уроки v0.8.0/B, регресс +32%):
+    /// минимум loop-carried состояния (i, last_at, colon, facts,
+    /// facts_at_colon) и НИКАКИХ условных гейтов вида «if colon.is_none()
+    /// { копить }» / отслеживания первого bad-байта / Option-first_byte —
+    /// LLVM клонирует такой цикл в ДВЕ копии с диспетчем версии на каждой
+    /// итерации (+mov/cmp/mov/cmp$1 к каждому обычному байту) и льёт len
+    /// на стек. Поэтому: facts копятся БЕЗУСЛОВНО (первое ':' снапшотит
+    /// pre-colon факты), вид первого bad-байта — редкий РЕСКАН в
+    /// parse_domain, '['-детект — чтение одного байта после цикла.
     fn parse_authority_and_path(&mut self, start: usize) -> Result<(), RawFail> {
         let bytes = self.raw.as_bytes();
         let len = bytes.len();
         let special = self.kind.is_special();
-        // v0.5: скан терминатора по константной таблице (одна загрузка
-        // вместо цепочки сравнений matches! на каждый байт)
         let term: &[u8; 256] = if special {
-            &AUTH_TERM_SPECIAL
+            &AUTH_SCAN_SPECIAL
         } else {
-            &AUTH_TERM_GENERIC
+            &AUTH_SCAN_GENERIC
         };
-        // v0.6: '@' отслеживается САМИМ сканом терминаторов (маркер в
-        // таблице — регистровая запись, ноль вызовов; быстрый путь
-        // обычного байта t == 0 не изменился). Инвариант WHATWG:
-        // '@' не терминирует authority, последний '@' открывает хост.
         let mut i = start;
         let mut last_at: u32 = u32::MAX;
+        // факты хоста (регистры; сбрасываются на каждом '@'); colon —
+        // Option: НЕ заменять на u32-сентинел и НЕ ставить гейт
+        // «if colon.is_none() { копить }» — гейт клонирует цикл (v0.8.0/B),
+        // снапшот на первом ':' убирает гейт из горячего пути (v0.8.1)
+        let mut colon: Option<u32> = None;
+        let mut facts: u8 = 0; // AUTH_M_UPPER | AUTH_M_PCT | AUTH_M_NONASCII | AUTH_M_FORBIDDEN
+        let mut facts_at_colon: u8 = 0; // снапшот на первом ':' (pre-colon)
         while i < len {
             let t = term[bytes[i] as usize];
             if t == 0 {
@@ -486,11 +513,33 @@ impl<'a> Url<'a> {
                 // фаза 0 удалила бы их до разбора
                 return Err(RawFail::Dirty);
             }
-            // AUTH_M_AT — редкий байт: предикат вне быстрого пути
-            last_at = i as u32;
+            if t & AUTH_M_COLON != 0 {
+                if colon.is_none() {
+                    colon = Some(i as u32);
+                    facts_at_colon = facts;
+                }
+                i += 1;
+                continue;
+            }
+            if t & AUTH_M_AT != 0 {
+                last_at = i as u32;
+                colon = None;
+                facts = 0;
+                i += 1;
+                continue;
+            }
+            // факты копятся БЕЗУСЛОВНО: байты ПОСЛЕ ':' не используются —
+            // при colon.is_some() берётся снапшот facts_at_colon (паритет:
+            // прежний scan_host_domain останавливался на ':')
+            facts |= t & (AUTH_M_UPPER | AUTH_M_PCT | AUTH_M_NONASCII | AUTH_M_FORBIDDEN);
             i += 1;
         }
         let auth_end = i;
+        let facts = if colon.is_some() {
+            facts_at_colon
+        } else {
+            facts
+        };
 
         // userinfo: последний '@' в authority известен из скана. Без '@'
         // (типичный URL) — парсер userinfo не вызывается вовсе. С '@' —
@@ -510,7 +559,7 @@ impl<'a> Url<'a> {
             start
         };
 
-        self.parse_host_and_port(host_span_start, auth_end)?;
+        self.parse_host_and_port(host_span_start, auth_end, colon, facts)?;
 
         // --- путь/запрос/фрагмент
         self.parse_path_query_fragment(auth_end)?;
@@ -520,7 +569,15 @@ impl<'a> Url<'a> {
     }
 
     /// Хост и порт внутри authority-диапазона.
-    fn parse_host_and_port(&mut self, from: usize, end: usize) -> Result<(), RawFail> {
+    /// v0.8: факты хоста (colon/upper/pct/bad) приходят из слитого
+    /// authority-скана; '['-детект — чтение байта host-спана (как в v0.5).
+    fn parse_host_and_port(
+        &mut self,
+        from: usize,
+        end: usize,
+        colon: Option<u32>,
+        facts: u8,
+    ) -> Result<(), RawFail> {
         let bytes = self.raw.as_bytes();
         let mut host_end = end;
         let mut port_span: (usize, usize) = (end, end);
@@ -579,16 +636,11 @@ impl<'a> Url<'a> {
                 }
             }
         } else {
-            // --- домен или IPv4: ОДИН табличный проход по спану хоста
-            // (v0.5: было ТРИ прохода — SWAR find ':' + memchr '%' +
-            // побайтовая валидация в parse_domain)
-            let scan = scan_host_domain(bytes, from, end);
-            if scan.dirty {
-                // \t\n\r в спане хоста — фаза 0 удалила бы их до разбора
-                return Err(RawFail::Dirty);
-            }
-            if scan.has_port {
-                host_end = scan.host_end;
+            // --- домен или IPv4: факты УЖЕ собраны слитым authority-сканом
+            // (v0.8; v0.5 здесь был второй проход scan_host_domain).
+            // \t\n\r в спане хоста ловятся AUTH_T_DIRTY в том же проходе.
+            if let Some(c) = colon {
+                host_end = c as usize;
                 has_port = true;
                 port_span = (host_end + 1, end);
                 if port_span.0 == port_span.1 {
@@ -596,7 +648,7 @@ impl<'a> Url<'a> {
                     self.flags |= F_PORT_EMPTY;
                 }
             }
-            self.parse_domain(from, host_end, scan)?;
+            self.parse_domain(from, host_end, facts)?;
         }
 
         // --- порт
@@ -641,16 +693,16 @@ impl<'a> Url<'a> {
 
     /// Домен: percent-decode при наличии '%', запрет символов,
     /// детекция IPv4 (ends-in-a-number), флаг нижнего регистра.
-    /// v0.5: валидация/верхний регистр/'%' предвычислены табличным
-    /// проходом scan_host_domain — здесь только редкие пути (decode,
-    /// ошибки) и решение о IPv4/owned.
-    fn parse_domain(&mut self, from: usize, end: usize, scan: HostScan) -> Result<(), Error> {
+    /// v0.8: валидация/верхний регистр/'%' собраны слитым authority-сканом
+    /// (facts) — здесь только редкие пути (decode, ошибки, РЕСКАН первого
+    /// bad-байта) и решение о IPv4/owned.
+    fn parse_domain(&mut self, from: usize, end: usize, facts: u8) -> Result<(), Error> {
         // РЕДКИЙ путь: percent-decode + полная валидация декодированных
         // (сырые запрещённые байты попадают в декодированные дословно,
         // но %XX может легализовать верхний регистр — решает декод;
-        // поэтому сырой scan.bad при наличии '%' игнорируется).
-        // Быстрый путь: без '%' — ошибка по первому bad из скана.
-        let outcome = if scan.pct.is_some() {
+        // поэтому сырые bad-биты facts при наличии '%' игнорируются).
+        // Быстрый путь: без '%' — ошибка по первому bad из РЕСКОНА.
+        let outcome = if facts & AUTH_M_PCT != 0 {
             let span = &self.raw.as_bytes()[from..end];
             let decoded = percent_decode(span).ok_or(Error {
                 position: from,
@@ -674,12 +726,24 @@ impl<'a> Url<'a> {
             }
             finish_domain(from, &decoded, span, has_upper)?
         } else {
-            if let Some((_, nonascii)) = scan.bad {
-                // первый запрещённый/не-ASCII байт спана (порядок
-                // совпадает с прежним циклом валидации)
+            if facts & (AUTH_M_NONASCII | AUTH_M_FORBIDDEN) != 0 {
+                // РЕДКИЙ РЕСКАН (bad-байты вне бенч-корпуса): вид ПЕРВОГО
+                // запрещённого/не-ASCII байта спана решает ошибку (паритет
+                // с прежним циклом валидации scan_host_domain). Позиция
+                // не нужна — ошибка ставится на from. Отслеживание в
+                // горячем цикле запрещено (урок v0.8: клонирование цикла).
+                let tbl: &[u8; 256] = if self.kind.is_special() {
+                    &AUTH_SCAN_SPECIAL
+                } else {
+                    &AUTH_SCAN_GENERIC
+                };
+                let bad_nonascii = self.raw.as_bytes()[from..end]
+                    .iter()
+                    .find(|&&c| tbl[c as usize] & (AUTH_M_NONASCII | AUTH_M_FORBIDDEN) != 0)
+                    .is_some_and(|&c| tbl[c as usize] & AUTH_M_NONASCII != 0);
                 return Err(Error {
                     position: from,
-                    kind: if nonascii {
+                    kind: if bad_nonascii {
                         ErrorKind::IdnaError
                     } else {
                         ErrorKind::InvalidDomainCharacter
@@ -687,7 +751,7 @@ impl<'a> Url<'a> {
                 });
             }
             let span = &self.raw.as_bytes()[from..end];
-            finish_domain(from, span, span, scan.has_upper)?
+            finish_domain(from, span, span, facts & AUTH_M_UPPER != 0)?
         };
         match outcome {
             DomainOutcome::Ipv4(Some(dotted)) => self.host_owned = Some(dotted),
@@ -1079,66 +1143,33 @@ static PATH_TBL_GENERIC: [u8; 256] = build_path_table(false);
 static QUERY_TBL_SPECIAL: [u8; 256] = build_query_table(true);
 static QUERY_TBL_GENERIC: [u8; 256] = build_query_table(false);
 
-// ---------------------------------------------------------------------------
-// Табличный скан домена (v0.5): один проход вместо трёх
-// ---------------------------------------------------------------------------
+// (v0.8) HOST_DOMAIN_TBL и scan_host_domain удалены: факты хоста
+// собирает слитый authority-скан (таблица AUTH_SCAN_*).
 
-// Биты таблицы домена (локальные, в self.flags не OR-ятся).
-const T_COLON: u8 = 1 << 4; // ':' — конец хоста, начало порта
-const F_H_UPPER: u8 = 1 << 0; // верхний регистр (F_HOST_LOWER)
-const F_H_PCT: u8 = 1 << 1; // '%' — нужен percent-decode
-const F_H_NONASCII: u8 = 1 << 2; // >= 0x80 — IdnaError
-const F_H_FORBIDDEN: u8 = 1 << 3; // forbidden host code point
-/// \t\n\r в спане хоста — грязь отложенной фазы 0 (v0.7)
-const T_DIRTY_HOST: u8 = 1 << 5;
-
-const fn build_host_domain_table() -> [u8; 256] {
-    let mut t = [0u8; 256];
-    let mut c = 0usize;
-    while c < 256 {
-        let b = c as u8;
-        let mut v = 0u8;
-        if b == b':' {
-            v |= T_COLON;
-        }
-        if matches!(b, b'\t' | b'\n' | b'\r') {
-            // до forbidden-проверки: это не ошибка, а рестарт фазы 0
-            v |= T_DIRTY_HOST;
-        }
-        if b.is_ascii_uppercase() {
-            v |= F_H_UPPER;
-        }
-        if b == b'%' {
-            // '%' — не ошибка, а маркер декодирования (в списке forbidden,
-            // но решение принимает percent-decode)
-            v |= F_H_PCT;
-        } else {
-            if b >= 0x80 {
-                v |= F_H_NONASCII;
-            }
-            if is_forbidden_host_byte(b) {
-                v |= F_H_FORBIDDEN;
-            }
-        }
-        t[c] = v;
-        c += 1;
-    }
-    t
-}
-
-static HOST_DOMAIN_TBL: [u8; 256] = build_host_domain_table();
-
-/// Таблица терминаторов authority: '/', '?', '#' и '\\' у спец-схем.
-/// v0.6: кроме бита терминатора — маркер '@' (M_AT): горячий цикл скана
-/// только запоминает ПОСЛЕДНИЙ '@' в регистре, поэтому parse_userinfo
-/// для URL без userinfo (типичный случай) НЕ СКАНИРУЕТ authority вовсе
-/// (раньше rfind_byte('@') проходил весь спан хоста назад). При наличии
-/// '@' — redo-проход только по userinfo-спану (точная прежняя семантика).
+/// Таблица СЛИТОГО скана authority (v0.8): терминаторы '/', '?', '#'
+/// (и '\\' у спец-схем), маркер '@', грязь \t\n\r — как в прежней
+/// AUTH_TERM_* — ПЛЮС факты хоста из HOST_DOMAIN_TBL: ':' (порт),
+/// верхний регистр, '%', не-ASCII, forbidden-байты. Один проход по
+/// authority собирает ВСЁ — второй проход scan_host_domain по спану
+/// хоста удалён (архитектура v0.5 «один проход вместо трёх», теперь
+/// «вместо двух»). 8 бит — ровно байт таблицы.
 const AUTH_TERM_BIT: u8 = 1 << 0;
 const AUTH_M_AT: u8 = 1 << 1;
 /// \t\n\r в authority — грязь отложенной фазы 0 (v0.7)
 const AUTH_T_DIRTY: u8 = 1 << 2;
-const fn build_auth_term_table(special: bool) -> [u8; 256] {
+/// ':' — конец хоста, начало порта (из HOST_DOMAIN_TBL)
+const AUTH_M_COLON: u8 = 1 << 3;
+/// верхний регистр (F_HOST_LOWER)
+const AUTH_M_UPPER: u8 = 1 << 4;
+/// '%' — нужен percent-decode (редкий путь)
+const AUTH_M_PCT: u8 = 1 << 5;
+/// не-ASCII (>= 0x80) — IdnaError
+const AUTH_M_NONASCII: u8 = 1 << 6;
+/// forbidden host code point (кроме несущих собственные биты:
+/// '%' — декодирование, ':' — порт, '@' — userinfo)
+const AUTH_M_FORBIDDEN: u8 = 1 << 7;
+
+const fn build_auth_scan_table(special: bool) -> [u8; 256] {
     let mut t = [0u8; 256];
     t[b'/' as usize] = AUTH_TERM_BIT;
     t[b'?' as usize] = AUTH_TERM_BIT;
@@ -1147,14 +1178,28 @@ const fn build_auth_term_table(special: bool) -> [u8; 256] {
     t[b'\t' as usize] = AUTH_T_DIRTY;
     t[b'\n' as usize] = AUTH_T_DIRTY;
     t[b'\r' as usize] = AUTH_T_DIRTY;
+    t[b':' as usize] = AUTH_M_COLON;
+    t[b'%' as usize] = AUTH_M_PCT;
     if special {
         t[b'\\' as usize] = AUTH_TERM_BIT;
+    }
+    let mut c = 0usize;
+    while c < 256 {
+        let b = c as u8;
+        if b.is_ascii_uppercase() {
+            t[c] |= AUTH_M_UPPER;
+        } else if b >= 0x80 {
+            t[c] |= AUTH_M_NONASCII;
+        } else if t[c] == 0 && is_forbidden_host_byte(b) {
+            t[c] = AUTH_M_FORBIDDEN;
+        }
+        c += 1;
     }
     t
 }
 
-static AUTH_TERM_SPECIAL: [u8; 256] = build_auth_term_table(true);
-static AUTH_TERM_GENERIC: [u8; 256] = build_auth_term_table(false);
+static AUTH_SCAN_SPECIAL: [u8; 256] = build_auth_scan_table(true);
+static AUTH_SCAN_GENERIC: [u8; 256] = build_auth_scan_table(false);
 
 /// Таблица символов схемы: валидный символ схемы (alnum, '+', '-', '.') —
 /// S_OK; верхняя буква дополнительно S_UPPER (детект слит со сканом);
@@ -1185,21 +1230,6 @@ const fn build_scheme_table() -> [u8; 256] {
 }
 
 static SCHEME_TBL: [u8; 256] = build_scheme_table();
-
-/// Результат табличного прохода по спану домена.
-struct HostScan {
-    host_end: usize,
-    has_port: bool,
-    /// \t\n\r в спане — рестарт отложенной фазы 0 (v0.7)
-    dirty: bool,
-    has_upper: bool,
-    /// первая '%' — нужен percent-decode (редкий путь)
-    pct: Option<usize>,
-    /// первый запрещённый/не-ASCII байт: (позиция, не-ASCII?) —
-    /// НЕИЗБЕЖНАЯ ошибка: такие байты попадают в декодированный хост
-    /// дословно, но вид ошибки решает декод при наличии '%'
-    bad: Option<(usize, bool)>,
-}
 
 /// Применённый исход домена (без заимствования self — parse_domain
 /// мутит поля по результату).
@@ -1239,54 +1269,6 @@ fn finish_domain(
         ));
     }
     Ok(DomainOutcome::Borrowed(has_upper))
-}
-
-/// Один проход по [from..end): конец хоста (':'), верхний регистр,
-/// '%' и запрещённые/не-ASCII байты. Заменяет три прохода (SWAR find
-/// ':' + memchr '%' + побайтовая валидация). Порядок bad — как в
-/// прежнем цикле валидации (первый плохой байт определяет ошибку).
-#[inline]
-fn scan_host_domain(bytes: &[u8], from: usize, end: usize) -> HostScan {
-    let mut s = HostScan {
-        host_end: end,
-        has_port: false,
-        dirty: false,
-        has_upper: false,
-        pct: None,
-        bad: None,
-    };
-    let mut i = from;
-    while i < end {
-        let t = HOST_DOMAIN_TBL[bytes[i] as usize];
-        if t == 0 {
-            i += 1;
-            continue;
-        }
-        if t & T_DIRTY_HOST != 0 {
-            s.dirty = true;
-            return s;
-        }
-        if t & T_COLON != 0 {
-            // байты после ':' — порт (валидация цифр отдельно)
-            s.host_end = i;
-            s.has_port = true;
-            return s;
-        }
-        if t & F_H_UPPER != 0 {
-            s.has_upper = true;
-            i += 1;
-            continue;
-        }
-        if t & F_H_PCT != 0 {
-            if s.pct.is_none() {
-                s.pct = Some(i);
-            }
-        } else if s.bad.is_none() {
-            s.bad = Some((i, t & F_H_NONASCII != 0));
-        }
-        i += 1;
-    }
-    s
 }
 
 #[inline]
