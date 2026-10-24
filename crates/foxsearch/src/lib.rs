@@ -762,22 +762,48 @@ struct AvxCtx {
     bits: std::arch::x86_64::__m256i,
 }
 
-/// OR-цепочка из $n cmpeq: разворачивается в константный код (тёплый путь
-/// горячего цикла), без bounds-check runtime-срезов.
-macro_rules! avx_or_chain {
-    ($chunk:expr, $ctx:expr, $n:literal) => {{
-        let mut acc = _mm256_cmpeq_epi8($chunk, $ctx.b[0]);
-        let mut j = 1;
-        while j < $n {
-            acc = _mm256_or_si256(acc, _mm256_cmpeq_epi8($chunk, $ctx.b[j]));
+/// Маска «байт принадлежит множеству» для 32-байтного блока, МОНОМОРФНАЯ
+/// по K (константа времени компиляции): K = 1..=8 — длина CmpEq-цепочки
+/// (OR из K cmpeq, цикл с константным числом итераций разворачивается,
+/// индексы b[j] постоянные — без bounds-check), K = BITMAP_KIND — биткарта.
+///
+/// Итерация 23: раньше dispatch по kind выполнялся ВНУТРИ горячего цикла
+/// (сравнение+ветвление на каждый 32Б-блок сверх load/cmpeq/movemask);
+/// мономорфизация вынесла его на границу окна — один раз на ~128 блоков.
+/// Вызывать только из AVX2-контекста (под `multi_scan_window_avx2`).
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn avx_mask_k<const K: u8>(
+    chunk: std::arch::x86_64::__m256i,
+    ctx: &AvxCtx,
+    low_nib: std::arch::x86_64::__m256i,
+    zero: std::arch::x86_64::__m256i,
+) -> i32 {
+    use std::arch::x86_64::*;
+    if K == BITMAP_KIND {
+        // Биткарта по нибблам: hi-ниббл выбирает строку (16 строк),
+        // lo-ниббл — бит в ней. Строки-байты покрывают биты lo&7, поэтому
+        // байты b и b^8 коллидируют — ложные кандидаты отсекаются
+        // верификацией (группа такого байта пуста или не матчится).
+        let hi = _mm256_and_si256(_mm256_srli_epi16(chunk, 4), low_nib);
+        let lo = _mm256_and_si256(chunk, low_nib);
+        let t = _mm256_shuffle_epi8(ctx.rows, hi);
+        let u = _mm256_shuffle_epi8(ctx.bits, lo);
+        !_mm256_movemask_epi8(_mm256_cmpeq_epi8(_mm256_and_si256(t, u), zero))
+    } else {
+        let mut acc = _mm256_cmpeq_epi8(chunk, ctx.b[0]);
+        let mut j = 1usize;
+        while j < K as usize {
+            acc = _mm256_or_si256(acc, _mm256_cmpeq_epi8(chunk, *ctx.b.get_unchecked(j)));
             j += 1;
         }
-        acc
-    }};
+        _mm256_movemask_epi8(acc)
+    }
 }
 
-/// Маска «байт принадлежит множеству» для 32-байтного блока.
-/// Вызывать только из AVX2-контекста (под `multi_scan_window_avx2`).
+/// Runtime-обёртка dispatch по kind — ТОЛЬКО для холодных вызовов
+/// (перекрывающийся финальный блок стога: один раз на стог). В горячем
+/// цикле используется мономорфный `avx_mask_k` через `multi_scan_blocks_k`.
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn avx_mask(
@@ -786,28 +812,65 @@ unsafe fn avx_mask(
     low_nib: std::arch::x86_64::__m256i,
     zero: std::arch::x86_64::__m256i,
 ) -> i32 {
-    use std::arch::x86_64::*;
     match ctx.kind {
-        BITMAP_KIND => {
-            // Биткарта по нибблам: hi-ниббл выбирает строку (16 строк),
-            // lo-ниббл — бит в ней. Строки-байты покрывают биты lo&7, поэтому
-            // байты b и b^8 коллидируют — ложные кандидаты отсекаются
-            // верификацией (группа такого байта пуста или не матчится).
-            let hi = _mm256_and_si256(_mm256_srli_epi16(chunk, 4), low_nib);
-            let lo = _mm256_and_si256(chunk, low_nib);
-            let t = _mm256_shuffle_epi8(ctx.rows, hi);
-            let u = _mm256_shuffle_epi8(ctx.bits, lo);
-            !_mm256_movemask_epi8(_mm256_cmpeq_epi8(_mm256_and_si256(t, u), zero))
-        }
-        1 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 1)),
-        2 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 2)),
-        3 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 3)),
-        4 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 4)),
-        5 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 5)),
-        6 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 6)),
-        7 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 7)),
-        _ => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 8)),
+        BITMAP_KIND => avx_mask_k::<BITMAP_KIND>(chunk, ctx, low_nib, zero),
+        1 => avx_mask_k::<1>(chunk, ctx, low_nib, zero),
+        2 => avx_mask_k::<2>(chunk, ctx, low_nib, zero),
+        3 => avx_mask_k::<3>(chunk, ctx, low_nib, zero),
+        4 => avx_mask_k::<4>(chunk, ctx, low_nib, zero),
+        5 => avx_mask_k::<5>(chunk, ctx, low_nib, zero),
+        6 => avx_mask_k::<6>(chunk, ctx, low_nib, zero),
+        7 => avx_mask_k::<7>(chunk, ctx, low_nib, zero),
+        _ => avx_mask_k::<8>(chunk, ctx, low_nib, zero),
     }
+}
+
+/// Горячий цикл сбора хитов по 32Б-блокам, МОНОМОРФНЫЙ по K: dispatch по
+/// kind выполнен ОДИН раз вызывающим (на границе окна), в теле цикла
+/// остаётся только load/mask/collect. Возврат: (count, i) — i нужен
+/// вызывающему для перекрывающегося хвостового добора последнего окна
+/// (позиция после последнего целого 32Б-блока).
+///
+/// # Safety
+/// Вызывать только при поддержке AVX2 (`simd_level() == SIMD_AVX2`);
+/// `ptr..ptr+wlen` валидны для чтения.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn multi_scan_blocks_k<const K: u8>(
+    ptr: *const u8,
+    wlen: usize,
+    ctx: &AvxCtx,
+    low_nib: std::arch::x86_64::__m256i,
+    zero: std::arch::x86_64::__m256i,
+    out: &mut [u16; MULTI_HITS_CAP],
+) -> (usize, usize) {
+    use std::arch::x86_64::*;
+
+    let mut count = 0usize;
+    let mut i = 0usize;
+    // wlen либо кратен 32 (не-последнее окно = 4096), либо равен len
+    // (последнее окно) — 32-байтные блоки никогда не пересекают границу
+    // окна, поэтому проверка pos >= wlen в горячем цикле не нужна.
+    while i + 32 <= wlen {
+        let chunk = _mm256_loadu_si256(ptr.add(i) as *const __m256i);
+        let mut m = avx_mask_k::<K>(chunk, ctx, low_nib, zero);
+        if m != 0 {
+            loop {
+                let pos = i + m.trailing_zeros() as usize;
+                out[count] = pos as u16;
+                count += 1;
+                if count == out.len() {
+                    return (count, i);
+                }
+                m &= m.wrapping_sub(1);
+                if m == 0 {
+                    break;
+                }
+            }
+        }
+        i += 32;
+    }
+    (count, i)
 }
 
 /// Пакетный сбор хитов окна [0, wlen) среза `hay`. Срез берётся от начала
@@ -830,10 +893,10 @@ unsafe fn multi_scan_window_avx2(
     use std::arch::x86_64::*;
 
     let len = hay.len();
-    let mut count = 0usize;
 
     if len < 32 || wlen < 32 {
         // короткий стог/последнее окно < 32Б: скалярный сбор
+        let mut count = 0usize;
         for (j, &b) in hay[..wlen.min(len)].iter().enumerate() {
             if scan.contains(b) {
                 out[count] = j as u16;
@@ -881,29 +944,24 @@ unsafe fn multi_scan_window_avx2(
         }
     };
 
-    let mut i = 0usize;
-    // wlen либо кратен 32 (не-последнее окно = 4096), либо равен len
-    // (последнее окно) — 32-байтные блоки никогда не пересекают границу
-    // окна, поэтому проверка pos >= wlen в горячем цикле не нужна.
-    while i + 32 <= wlen {
-        let chunk = _mm256_loadu_si256(ptr.add(i) as *const __m256i);
-        let mut m = avx_mask(chunk, &ctx, low_nib, zero);
-        if m != 0 {
-            loop {
-                let pos = i + m.trailing_zeros() as usize;
-                out[count] = pos as u16;
-                count += 1;
-                if count == out.len() {
-                    return count;
-                }
-                m &= m.wrapping_sub(1);
-                if m == 0 {
-                    break;
-                }
-            }
+    // Итерация 23: dispatch по kind — ОДИН раз на окно (граница вызова);
+    // горячий цикл мономорфен (см. multi_scan_blocks_k). Раньше match
+    // ctx.kind выполнялся на КАЖДЫЙ 32Б-блок. build_scan производит kind
+    // 1..=8 и BITMAP_KIND — ветвь `_` недостижима (страховка).
+    let (mut count, i) = match ctx.kind {
+        BITMAP_KIND => {
+            multi_scan_blocks_k::<BITMAP_KIND>(ptr, wlen, &ctx, low_nib, zero, &mut *out)
         }
-        i += 32;
-    }
+        1 => multi_scan_blocks_k::<1>(ptr, wlen, &ctx, low_nib, zero, &mut *out),
+        2 => multi_scan_blocks_k::<2>(ptr, wlen, &ctx, low_nib, zero, &mut *out),
+        3 => multi_scan_blocks_k::<3>(ptr, wlen, &ctx, low_nib, zero, &mut *out),
+        4 => multi_scan_blocks_k::<4>(ptr, wlen, &ctx, low_nib, zero, &mut *out),
+        5 => multi_scan_blocks_k::<5>(ptr, wlen, &ctx, low_nib, zero, &mut *out),
+        6 => multi_scan_blocks_k::<6>(ptr, wlen, &ctx, low_nib, zero, &mut *out),
+        7 => multi_scan_blocks_k::<7>(ptr, wlen, &ctx, low_nib, zero, &mut *out),
+        8 => multi_scan_blocks_k::<8>(ptr, wlen, &ctx, low_nib, zero, &mut *out),
+        _ => multi_scan_blocks_k::<8>(ptr, wlen, &ctx, low_nib, zero, &mut *out),
+    };
     // Последнее окно стога: добор перекрывающимся финальным блоком. Все
     // байты [0, i) уже проверены основным циклом; блок [len-32, len)
     // покрывает остаток — собираем только позиции >= i (дубликатов нет).
