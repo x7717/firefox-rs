@@ -181,27 +181,37 @@ impl fmt::Debug for Url<'_> {
 
 /// Расобрать URL (WHATWG basic parser, подмножество — см. документацию).
 pub fn parse(input: &str) -> Result<Url<'_>, Error> {
-    // Фаза 0: грязь — табы/переводы строк удаляются ВЕЗДЕ, C0/пробелы
-    // обрезаются по краям. Чистый вход (типичный) — zero-copy.
-    // SWAR-скан \t\n\r: XOR с replicated-иглой + детекция нулевого байта
-    // в 8-байтных чанках (было: побайтовый `.any()` — 6.2% профиля).
-    let dirty_ws = has_dirty_ws(input.as_bytes());
-    let raw: Cow<'_, str> = if dirty_ws {
-        let mut s = String::with_capacity(input.len());
-        for c in input.chars() {
-            if !matches!(c, '\t' | '\n' | '\r') {
-                s.push(c);
+    // Фаза 0 ОТЛОЖЕНА (v0.7): раньше has_dirty_ws сканировал ВЕСЬ вход
+    // SWAR-ом ДО парсинга — 6.3% профиля (полный лишний проход на каждом
+    // URL ради редкой грязи). Теперь сканы парсера сами детектируют
+    // \t\n\r (маркеры в таблицах/редких путях) и обрезаемые края
+    // (первый/последний байт <= 0x20); на находку — холодный рестарт
+    // на очищенном входе. Чистый вход (типичный) парсится без пре-скана.
+    match parse_raw(Cow::Borrowed(input)) {
+        Ok(url) => Ok(url),
+        Err(RawFail::Err(e)) => Err(e),
+        Err(RawFail::Dirty) => {
+            // Холодный путь: табы/переводы строк удаляются ВЕЗДЕ, C0/пробелы
+            // обрезаются по краям; рестарт на очищенной копии.
+            let mut s = String::with_capacity(input.len());
+            for c in input.chars() {
+                if !matches!(c, '\t' | '\n' | '\r') {
+                    s.push(c);
+                }
+            }
+            let raw: Cow<'_, str> = match trim_c0(&s) {
+                None => Cow::Owned(s),
+                Some(t) => Cow::Owned(t),
+            };
+            match parse_raw(raw) {
+                Ok(url) => Ok(url),
+                Err(RawFail::Err(e)) => Err(e),
+                Err(RawFail::Dirty) => {
+                    unreachable!("очищенный вход не содержит \\t\\n\\r и обрезаемых краёв")
+                }
             }
         }
-        Cow::Owned(s)
-    } else {
-        Cow::Borrowed(input)
-    };
-    let raw: Cow<'_, str> = match trim_c0(&raw) {
-        None => raw,
-        Some(t) => Cow::Owned(t),
-    };
-    parse_raw(raw)
+    }
 }
 
 /// Обрезка C0-управляющих и пробелов по краям; None — обрезать нечего.
@@ -223,38 +233,6 @@ fn trim_c0(s: &str) -> Option<String> {
 }
 
 // --- SWAR-скан «грязных» пробелов (\t \n \r) ---
-
-/// Есть ли во входе \t / \n / \r (фаза 0 WHATWG). 16 байт за итерацию
-/// (v0.6: было 8 — два u64-загрузки на чанк дают 2x пропускную
-/// способность на том же наборе XOR-трюков). Хвост — побайтово.
-fn has_dirty_ws(bytes: &[u8]) -> bool {
-    const ONES: u64 = 0x0101_0101_0101_0101;
-    const HI: u64 = 0x8080_8080_8080_8080;
-    const TAB: u64 = 0x0909_0909_0909_0909;
-    const LF: u64 = 0x0A0A_0A0A_0A0A_0A0A;
-    const CR: u64 = 0x0D0D_0D0D_0D0D_0D0D;
-
-    #[inline(always)]
-    fn chunk_hit(x: u64) -> bool {
-        let t = x ^ TAB;
-        let n = x ^ LF;
-        let r = x ^ CR;
-        let hit = (t.wrapping_sub(ONES) & !t & HI)
-            | (n.wrapping_sub(ONES) & !n & HI)
-            | (r.wrapping_sub(ONES) & !r & HI);
-        hit != 0
-    }
-
-    let (chunks, tail) = bytes.as_chunks::<16>();
-    for c in chunks {
-        let lo = u64::from_le_bytes(c[..8].try_into().unwrap());
-        let hi = u64::from_le_bytes(c[8..].try_into().unwrap());
-        if chunk_hit(lo) || chunk_hit(hi) {
-            return true;
-        }
-    }
-    tail.iter().any(|&c| matches!(c, b'\t' | b'\n' | b'\r'))
-}
 
 /// SWAR-поиск первого вхождения байта (8 байт/итерацию: XOR + детекция
 /// нулевого байта). `core::slice::memchr` не стабилизирован — свой.
@@ -340,17 +318,49 @@ fn parse_userinfo(
     )
 }
 
-fn parse_raw(raw: Cow<'_, str>) -> Result<Url<'_>, Error> {
+/// Результат parse_raw. Dirty — во входе найдены \t\n\r или обрезаемые
+/// края (первый/последний байт <= 0x20): парсер откладывает фазу 0 WHATWG
+/// до факта находки; parse() перезапускается на очищенной копии.
+enum RawFail {
+    Err(Error),
+    Dirty,
+}
+
+impl From<Error> for RawFail {
+    fn from(e: Error) -> Self {
+        RawFail::Err(e)
+    }
+}
+
+fn parse_raw(raw: Cow<'_, str>) -> Result<Url<'_>, RawFail> {
     let bytes = raw.as_bytes();
     let len = bytes.len();
     let mut flags = 0u8;
 
     // --- схема: [a-zA-Z][a-zA-Z0-9+.-]* ':'
-    if bytes.first().is_none_or(|c| !c.is_ascii_alphabetic()) {
-        return Err(Error {
-            position: 0,
-            kind: ErrorKind::RelativeWithoutBase,
-        });
+    // v0.7: байт 0 <= 0x20 — обрезаемый край (trim_c0 снял бы его) —
+    // рестарт; прежняя версия отсекала это пре-сканом/тримом.
+    match bytes.first() {
+        None => {
+            return Err(RawFail::Err(Error {
+                position: 0,
+                kind: ErrorKind::RelativeWithoutBase,
+            }))
+        }
+        Some(&c) if c.is_ascii_alphabetic() => {}
+        Some(&c) if c <= b' ' => return Err(RawFail::Dirty),
+        Some(_) => {
+            return Err(RawFail::Err(Error {
+                position: 0,
+                kind: ErrorKind::RelativeWithoutBase,
+            }))
+        }
+    }
+    // v0.7: хвостовой край — последний байт <= 0x20 обрезался бы trim_c0
+    // прежней версии (фаза 0 до разбора). Хвостовой трим не влияет на
+    // смещения более ранних байтов — паритет позиций ошибок сохранён.
+    if bytes[len - 1] <= b' ' {
+        return Err(RawFail::Dirty);
     }
     // v0.6: один табличный проход (SCHEME_TBL) вместо двух: скан схемы
     // + детект верхнего регистра СЛИТЫ (был второй any(uppercase)-проход).
@@ -366,23 +376,27 @@ fn parse_raw(raw: Cow<'_, str>) -> Result<Url<'_>, Error> {
             continue;
         }
         if t == 0 {
-            return Err(Error {
+            return Err(RawFail::Err(Error {
                 position: i,
                 kind: ErrorKind::RelativeWithoutBase,
-            });
+            }));
         }
         if t & S_COLON != 0 {
             break;
+        }
+        if t & S_DIRTY != 0 {
+            // \t\n\r в схеме: фаза 0 удалила бы их ДО разбора
+            return Err(RawFail::Dirty);
         }
         // S_UPPER (всегда вместе с S_OK) — редкий байт
         upper = true;
         i += 1;
     }
     if i == len {
-        return Err(Error {
+        return Err(RawFail::Err(Error {
             position: len,
             kind: ErrorKind::RelativeWithoutBase,
-        });
+        }));
     }
     let scheme = (0u32, i as u32);
     if upper {
@@ -430,12 +444,13 @@ fn parse_raw(raw: Cow<'_, str>) -> Result<Url<'_>, Error> {
     } else {
         url.parse_opaque_path(i)?;
     }
+
     Ok(url)
 }
 
 impl<'a> Url<'a> {
     /// Authority до '/', '\\', '?', '#'; затем путь/запрос/фрагмент.
-    fn parse_authority_and_path(&mut self, start: usize) -> Result<(), Error> {
+    fn parse_authority_and_path(&mut self, start: usize) -> Result<(), RawFail> {
         let bytes = self.raw.as_bytes();
         let len = bytes.len();
         let special = self.kind.is_special();
@@ -460,6 +475,11 @@ impl<'a> Url<'a> {
             }
             if t & AUTH_TERM_BIT != 0 {
                 break;
+            }
+            if t & AUTH_T_DIRTY != 0 {
+                // \t\n\r в authority (в т.ч. внутри userinfo/IPv6-скобок):
+                // фаза 0 удалила бы их до разбора
+                return Err(RawFail::Dirty);
             }
             // AUTH_M_AT — редкий байт: предикат вне быстрого пути
             last_at = i as u32;
@@ -495,7 +515,7 @@ impl<'a> Url<'a> {
     }
 
     /// Хост и порт внутри authority-диапазона.
-    fn parse_host_and_port(&mut self, from: usize, end: usize) -> Result<(), Error> {
+    fn parse_host_and_port(&mut self, from: usize, end: usize) -> Result<(), RawFail> {
         let bytes = self.raw.as_bytes();
         let mut host_end = end;
         let mut port_span: (usize, usize) = (end, end);
@@ -533,7 +553,8 @@ impl<'a> Url<'a> {
                     return Err(Error {
                         position: from + 1,
                         kind: ErrorKind::InvalidIpv6Address,
-                    })
+                    }
+                    .into())
                 }
             }
             host_end = close + 1;
@@ -542,7 +563,8 @@ impl<'a> Url<'a> {
                     return Err(Error {
                         position: host_end,
                         kind: ErrorKind::InvalidIpv6Address,
-                    });
+                    }
+                    .into());
                 }
                 has_port = true;
                 port_span = (host_end + 1, end);
@@ -552,6 +574,10 @@ impl<'a> Url<'a> {
             // (v0.5: было ТРИ прохода — SWAR find ':' + memchr '%' +
             // побайтовая валидация в parse_domain)
             let scan = scan_host_domain(bytes, from, end);
+            if scan.dirty {
+                // \t\n\r в спане хоста — фаза 0 удалила бы их до разбора
+                return Err(RawFail::Dirty);
+            }
             if scan.has_port {
                 host_end = scan.host_end;
                 has_port = true;
@@ -572,14 +598,16 @@ impl<'a> Url<'a> {
                         return Err(Error {
                             position: port_span.0,
                             kind: ErrorKind::InvalidPort,
-                        });
+                        }
+                        .into());
                     }
                     p = p * 10 + u32::from(c - b'0');
                     if p > 65535 {
                         return Err(Error {
                             position: port_span.0,
                             kind: ErrorKind::InvalidPort,
-                        });
+                        }
+                        .into());
                     }
                 }
                 self.port = Some(p as u16);
@@ -591,7 +619,8 @@ impl<'a> Url<'a> {
             return Err(Error {
                 position: from,
                 kind: ErrorKind::EmptyHost,
-            });
+            }
+            .into());
         }
         self.host = (from as u32, host_end as u32);
         Ok(())
@@ -667,7 +696,6 @@ impl<'a> Url<'a> {
     /// затем запрос и фрагмент. Скан — по константной таблице
     /// классификации (одна загрузка вместо ветвистого match):
     /// обычные байты дают t == 0 — самый предсказуемый путь.
-    ///
     /// v0.4: флаги аккумулируются в acc (одна запись self.flags —
     /// урок итерации 10 про RMW через память), а F_PATH_NORM — ТОЧНЫЙ:
     /// горячий цикл только ОТМЕЧАЕТ кандидата ('.'/'%' в начале сегмента —
@@ -676,7 +704,7 @@ impl<'a> Url<'a> {
     /// (инлайн lookahead в цикле раздувал код: +8% на всём parse-корпусе,
     /// урок итерации 6). Точки внутри сегментов («app.main.min.css»)
     /// и «%20» кандидата НЕ дают — URL остаётся zero-copy (полкорпуса бенча).
-    fn parse_path_query_fragment(&mut self, start: usize) -> Result<(), Error> {
+    fn parse_path_query_fragment(&mut self, start: usize) -> Result<(), RawFail> {
         let bytes = self.raw.as_bytes();
         let len = bytes.len();
         let special = self.kind.is_special();
@@ -705,9 +733,9 @@ impl<'a> Url<'a> {
                     self.flags |= F_PATH_NORM;
                 }
                 if t & T_HASH != 0 {
-                    self.parse_fragment(i + 1);
+                    self.parse_fragment(i + 1)?;
                 } else {
-                    self.parse_query(i + 1, special);
+                    self.parse_query(i + 1, special)?;
                 }
                 return Ok(());
             }
@@ -720,7 +748,11 @@ impl<'a> Url<'a> {
                 dot_cand |=
                     i > start && (bytes[i - 1] == b'/' || (special && bytes[i - 1] == b'\\'));
             }
-            // младшие биты t — сами F_PATH_NORM (только '\') / F_PATH_ENC
+            // младшие биты t — сами F_PATH_NORM (только '\') / F_PATH_ENC;
+            // \t\n\r (F_PATH_ENC) — грязь фазы 0: удаляются, не кодируются
+            if matches!(bytes[i], b'\t' | b'\n' | b'\r') {
+                return Err(RawFail::Dirty);
+            }
             acc |= t & (F_PATH_ENC | F_PATH_NORM);
             i += 1;
             path_end = i;
@@ -737,7 +769,7 @@ impl<'a> Url<'a> {
     /// Флаги аккумулируются в локальной переменной: запись self.flags
     /// на КАЖДЫЙ байт (как в первой попытке v0.3) — это RMW через память
     /// и регресс длинных запросов (бенч #8 +11%).
-    fn parse_query(&mut self, start: usize, special: bool) {
+    fn parse_query(&mut self, start: usize, special: bool) -> Result<(), RawFail> {
         let bytes = self.raw.as_bytes();
         let len = bytes.len();
         let table: &[u8; 256] = if special {
@@ -749,26 +781,40 @@ impl<'a> Url<'a> {
         let mut acc = 0u8;
         while i < len {
             let t = table[bytes[i] as usize];
+            if t == 0 {
+                // v0.7 быстрый путь: обычный байт запроса — без проверок
+                i += 1;
+                continue;
+            }
             if t & T_HASH != 0 {
                 break;
             }
-            acc |= t; // F_QUERY_ENC в младших битах
+            if t & T_DIRTY_Q != 0 {
+                // \t\n\r: фаза 0 удалила бы их (не кодирование!)
+                return Err(RawFail::Dirty);
+            }
+            acc |= F_QUERY_ENC; // t здесь == F_QUERY_ENC
             i += 1;
         }
         self.flags |= acc;
         self.query = Some((start as u32, i as u32));
         if i < len {
-            self.parse_fragment(i + 1);
+            self.parse_fragment(i + 1)?;
         }
+        Ok(())
     }
 
-    fn parse_fragment(&mut self, start: usize) {
+    fn parse_fragment(&mut self, start: usize) -> Result<(), RawFail> {
         let bytes = self.raw.as_bytes();
         let mut i = start;
         let len = bytes.len();
         let mut dirty = false;
         while i < len {
-            if fragment_needs_enc(bytes[i]) {
+            let b = bytes[i];
+            if fragment_needs_enc(b) {
+                if matches!(b, b'\t' | b'\n' | b'\r') {
+                    return Err(RawFail::Dirty);
+                }
                 dirty = true;
             }
             i += 1;
@@ -777,23 +823,31 @@ impl<'a> Url<'a> {
             self.flags |= F_FRAG_ENC;
         }
         self.fragment = Some((start as u32, len as u32));
+        Ok(())
     }
 
     /// Opaque-путь не-специальной схемы (до '?' или '#'). Табличный скан,
     /// маскированный до F_PATH_ENC (NORM-биты '.'/'%' в opaque не нужны:
     /// флаг читается только у спец-схем, а лишний флаг ломал бы
     /// zero-copy fast-path as_str для mailto и т.п.).
-    fn parse_opaque_path(&mut self, start: usize) -> Result<(), Error> {
+    fn parse_opaque_path(&mut self, start: usize) -> Result<(), RawFail> {
         let bytes = self.raw.as_bytes();
         let len = bytes.len();
         let mut i = start;
         let mut dirty = false;
         while i < len {
             let t = PATH_TBL_GENERIC[bytes[i] as usize];
+            if t == 0 {
+                i += 1;
+                continue;
+            }
             if t & (T_QUERY | T_HASH) != 0 {
                 break;
             }
-            dirty |= t & F_PATH_ENC != 0;
+            if matches!(bytes[i], b'\t' | b'\n' | b'\r') {
+                return Err(RawFail::Dirty);
+            }
+            dirty |= t & F_PATH_ENC != 0; // T_DOTLEAD — не кодирование
             i += 1;
         }
         self.path = (start as u32, i as u32);
@@ -801,11 +855,11 @@ impl<'a> Url<'a> {
             self.flags |= F_PATH_ENC;
         }
         if bytes.get(i) == Some(&b'?') {
-            self.parse_query(i + 1, false);
+            self.parse_query(i + 1, false)?;
             return Ok(());
         }
         if i < len && bytes[i] == b'#' {
-            self.parse_fragment(i + 1);
+            self.parse_fragment(i + 1)?;
         }
         Ok(())
     }
@@ -947,6 +1001,8 @@ const T_HASH: u8 = 1 << 7; // '#' завершает путь/запрос
 /// '.'/'%' — потенциальное начало dot-сегмента: запускает lookahead
 /// парсера (бит таблицы, НЕ флаг Url — в self.flags не OR-ится).
 const T_DOTLEAD: u8 = 1 << 5;
+/// \t\n\r в запросе — грязь отложенной фазы 0 (v0.7)
+const T_DIRTY_Q: u8 = 1 << 5;
 
 /// Таблица классификации байтов пути. '\\' даёт NORM только у спец-схем;
 /// '.'/'%' — маркер T_DOTLEAD: реальный NORM ставит lookahead парсера,
@@ -993,6 +1049,9 @@ const fn build_query_table(special: bool) -> [u8; 256] {
         if query_needs_enc(b, special) {
             v |= F_QUERY_ENC;
         }
+        if matches!(b, b'\t' | b'\n' | b'\r') {
+            v |= T_DIRTY_Q;
+        }
         if b == b'#' {
             v |= T_HASH;
         }
@@ -1017,6 +1076,8 @@ const F_H_UPPER: u8 = 1 << 0; // верхний регистр (F_HOST_LOWER)
 const F_H_PCT: u8 = 1 << 1; // '%' — нужен percent-decode
 const F_H_NONASCII: u8 = 1 << 2; // >= 0x80 — IdnaError
 const F_H_FORBIDDEN: u8 = 1 << 3; // forbidden host code point
+/// \t\n\r в спане хоста — грязь отложенной фазы 0 (v0.7)
+const T_DIRTY_HOST: u8 = 1 << 5;
 
 const fn build_host_domain_table() -> [u8; 256] {
     let mut t = [0u8; 256];
@@ -1026,6 +1087,10 @@ const fn build_host_domain_table() -> [u8; 256] {
         let mut v = 0u8;
         if b == b':' {
             v |= T_COLON;
+        }
+        if matches!(b, b'\t' | b'\n' | b'\r') {
+            // до forbidden-проверки: это не ошибка, а рестарт фазы 0
+            v |= T_DIRTY_HOST;
         }
         if b.is_ascii_uppercase() {
             v |= F_H_UPPER;
@@ -1058,12 +1123,17 @@ static HOST_DOMAIN_TBL: [u8; 256] = build_host_domain_table();
 /// '@' — redo-проход только по userinfo-спану (точная прежняя семантика).
 const AUTH_TERM_BIT: u8 = 1 << 0;
 const AUTH_M_AT: u8 = 1 << 1;
+/// \t\n\r в authority — грязь отложенной фазы 0 (v0.7)
+const AUTH_T_DIRTY: u8 = 1 << 2;
 const fn build_auth_term_table(special: bool) -> [u8; 256] {
     let mut t = [0u8; 256];
     t[b'/' as usize] = AUTH_TERM_BIT;
     t[b'?' as usize] = AUTH_TERM_BIT;
     t[b'#' as usize] = AUTH_TERM_BIT;
     t[b'@' as usize] = AUTH_M_AT;
+    t[b'\t' as usize] = AUTH_T_DIRTY;
+    t[b'\n' as usize] = AUTH_T_DIRTY;
+    t[b'\r' as usize] = AUTH_T_DIRTY;
     if special {
         t[b'\\' as usize] = AUTH_TERM_BIT;
     }
@@ -1079,6 +1149,8 @@ static AUTH_TERM_GENERIC: [u8; 256] = build_auth_term_table(false);
 const S_OK: u8 = 1;
 const S_COLON: u8 = 2;
 const S_UPPER: u8 = 4;
+/// \t\n\r в схеме — грязь отложенной фазы 0 (v0.7)
+const S_DIRTY: u8 = 8;
 const fn build_scheme_table() -> [u8; 256] {
     let mut t = [0u8; 256];
     let mut c = 0usize;
@@ -1093,6 +1165,9 @@ const fn build_scheme_table() -> [u8; 256] {
         c += 1;
     }
     t[b':' as usize] = S_COLON;
+    t[b'\t' as usize] = S_DIRTY;
+    t[b'\n' as usize] = S_DIRTY;
+    t[b'\r' as usize] = S_DIRTY;
     t
 }
 
@@ -1102,6 +1177,8 @@ static SCHEME_TBL: [u8; 256] = build_scheme_table();
 struct HostScan {
     host_end: usize,
     has_port: bool,
+    /// \t\n\r в спане — рестарт отложенной фазы 0 (v0.7)
+    dirty: bool,
     has_upper: bool,
     /// первая '%' — нужен percent-decode (редкий путь)
     pct: Option<usize>,
@@ -1160,6 +1237,7 @@ fn scan_host_domain(bytes: &[u8], from: usize, end: usize) -> HostScan {
     let mut s = HostScan {
         host_end: end,
         has_port: false,
+        dirty: false,
         has_upper: false,
         pct: None,
         bad: None,
@@ -1170,6 +1248,10 @@ fn scan_host_domain(bytes: &[u8], from: usize, end: usize) -> HostScan {
         if t == 0 {
             i += 1;
             continue;
+        }
+        if t & T_DIRTY_HOST != 0 {
+            s.dirty = true;
+            return s;
         }
         if t & T_COLON != 0 {
             // байты после ':' — порт (валидация цифр отдельно)
@@ -2565,20 +2647,47 @@ mod tests {
         }
     }
 
-    /// SWAR-скан грязных пробелов: эквивалент побайтовому на корпусе
-    /// вокруг 8-байтной границы.
+    /// v0.7 отложенная фаза 0: \t\n\r на КАЖДОЙ позиции URL (все
+    /// компоненты — схема-края не бывает, authority, путь, запрос,
+    /// фрагмент) и обрезаемые края — ok/err и сериализация паритетны
+    /// url-крейту (он всегда чистит до разбора — эталон рестарта).
     #[test]
-    fn swar_dirty_ws_matches_scalar() {
-        for len in 0..=24usize {
-            for pos in 0..len {
-                for &ws in b"\t\n\r" {
-                    let mut v = vec![b'a'; len];
-                    v[pos] = ws;
-                    assert!(has_dirty_ws(&v), "len={len} pos={pos} ws={ws}");
+    fn deferred_dirty_ws_restart_parity() {
+        let base = "https://example.com/path/x?q=1#f";
+        for pos in 0..=base.len() {
+            for ws in ["\t", "\n", "\r"] {
+                let mut s = String::with_capacity(base.len() + 1);
+                s.push_str(&base[..pos]);
+                s.push_str(ws);
+                s.push_str(&base[pos..]);
+                match (url::Url::parse(&s), crate::parse(&s)) {
+                    (Ok(e), Ok(o)) => assert_eq!(o.as_str(), e.as_str(), "pos={pos} ws={ws:?}"),
+                    (Err(_), Err(_)) => {}
+                    (e, o) => panic!("pos={pos} ws={ws:?}: url={e:?} ours={o:?}"),
                 }
             }
-            let v = vec![b'a'; len];
-            assert!(!has_dirty_ws(&v), "len={len}");
+        }
+        // края: пробелы/C0/табы с двух сторон + комбо с внутренней грязью
+        let cases = [
+            " https://example.com/x ",
+            "  https://example.com/x",
+            "https://example.com/x  ",
+            "\u{1}https://example.com/x\u{1}",
+            " \thttps://example.com/x\n ",
+            "https://exa\tmple.com/x ",
+            " https://user\tname@example.com/x",
+            "https://example.com/pa\tth?q\n=1#f\r",
+            "\t\n\rhttps://example.com/x\t\n\r",
+            "   ",
+            "\t",
+            "",
+        ];
+        for case in cases {
+            match (url::Url::parse(case), crate::parse(case)) {
+                (Ok(e), Ok(o)) => assert_eq!(o.as_str(), e.as_str(), "case={case:?}"),
+                (Err(_), Err(_)) => {}
+                (e, o) => panic!("case={case:?}: url={e:?} ours={o:?}"),
+            }
         }
     }
 }
