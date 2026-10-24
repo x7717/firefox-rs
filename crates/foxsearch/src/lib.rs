@@ -408,6 +408,10 @@ pub struct MultiNeedle {
     byte_to_group: [i16; 256],
     max_fbpos: usize,
     empty_idx: Option<usize>,
+    /// Лево-сторожные LUT по группам (итерация 22): параллелен `groups`;
+    /// пустой вектор — группа верифицируется как прежде (одиночки, группы
+    /// > 64 игл, группы с fbp = 0). См. [`MultiNeedle::build_guard_luts`].
+    guard_luts: Vec<Vec<GuardLut>>,
     /// Сканер множества фильтр-байтов, предвычислен в конструкторе (итерация
     /// 21): в сценарии «классификатор» (поток коротких URL) per-call
     /// построение сканера стоило столько же, сколько сам скан URL.
@@ -424,6 +428,7 @@ impl MultiNeedle {
             byte_to_group: [-1i16; 256],
             max_fbpos: 0,
             empty_idx: None,
+            guard_luts: Vec::new(),
             scan: ByteScan::Bitmap { rows: [0; 16] }, // замещается после цикла
         };
         for (idx, nd) in needles.iter().enumerate() {
@@ -460,8 +465,77 @@ impl MultiNeedle {
             mn.groups[gi].push(idx as u32);
             mn.max_fbpos = mn.max_fbpos.max(fb);
         }
+        mn.guard_luts = Self::build_guard_luts(&mn.groups, &mn.fb_pos, &mn.needles);
         mn.scan = mn.build_scan();
         mn
+    }
+
+    /// Лево-сторожные LUT группы (итерация 22).
+    ///
+    /// Мотивация (SIGPROF-профиль, см. WORKLOG сессии 18): в сценарии
+    /// «классификатор» 72.8% времени — `verify_at`, в multi-8 — 46.2%:
+    /// каждый хит фильтр-байта ('=' встречается в каждом URL с query)
+    /// линейно проверял ВСЮ группу: 2 пре-фильтр-загрузки + ветвление на иглу.
+    ///
+    /// Идея: если игла совпадает в хите p, то её байт `nd[fbp-k]` стоит в
+    /// `hay[p-k]` для любого k <= fbp (старт s = p - fbp, позиция байта
+    /// s + fbp - k = p - k). Поэтому для смещений k = 1..=4 заранее строится
+    /// LUT[256] биткарт группы: бит j установлен <=> j-я игра НЕ отсекается
+    /// байтом `hay[p-k]` (не покрыта: fbp < k, либо nd[fbp-k] == байт).
+    /// Верификация хита: alive &= LUT_k[hay[p-k]] — до 4 загрузок из
+    /// резидентных таблиц убивают почти всех ложных кандидатов; полная
+    /// проверка — только по выжившим битам. Отсечка строгая: живая маска —
+    /// НАДМНОЖЕСТВО реальных совпадений, ложных отрицательных нет.
+    ///
+    /// Ограничения применения: группы из 2..=64 игл (биткарта u64) и с
+    /// fbp > 0; одиночки и группы > 64 (территория Aho-Corasick) идут как
+    /// прежде. Память: kmax * 2 КиБ на группу, kmax = min(4, max fbp).
+    fn build_guard_luts(
+        groups: &[Vec<u32>],
+        fb_pos: &[u32],
+        needles: &[Box<[u8]>],
+    ) -> Vec<Vec<GuardLut>> {
+        let mut out = Vec::with_capacity(groups.len());
+        for members in groups {
+            if members.len() < 2 || members.len() > GUARD_MAX_GROUP {
+                out.push(Vec::new());
+                continue;
+            }
+            let max_fbp = members
+                .iter()
+                .map(|&ni| fb_pos[ni as usize] as usize)
+                .max()
+                .unwrap_or(0);
+            let kmax = max_fbp.min(GUARD_OFFSETS);
+            if kmax == 0 {
+                out.push(Vec::new());
+                continue;
+            }
+            let mut luts: Vec<GuardLut> = Vec::with_capacity(kmax);
+            for k in 1..=kmax {
+                let mut lut: GuardLut = Box::new([0u64; 256]);
+                // непокрытые смещением иглы (fbp < k) живы при любом байте
+                let mut uncovered: u64 = 0;
+                for (j, &ni) in members.iter().enumerate() {
+                    if (fb_pos[ni as usize] as usize) < k {
+                        uncovered |= 1 << j;
+                    }
+                }
+                if uncovered != 0 {
+                    lut.iter_mut().for_each(|slot| *slot = uncovered);
+                }
+                for (j, &ni) in members.iter().enumerate() {
+                    let fbp = fb_pos[ni as usize] as usize;
+                    if fbp >= k {
+                        let b = needles[ni as usize][fbp - k];
+                        lut[b as usize] |= 1 << j;
+                    }
+                }
+                luts.push(lut);
+            }
+            out.push(luts);
+        }
+        out
     }
 
     /// Обёртка над [`MultiNeedle::new`] для строковых игл.
@@ -517,32 +591,41 @@ impl MultiNeedle {
     /// Верификация кандидата на позиции p (группа игл с фильтр-байтом hay[p]).
     /// Обновляет `best`; возвращает true, если дальнейший скан не может дать
     /// старт меньше найденного (левосторонний ранний выход).
+    ///
+    /// Итерация 22: перед перебором игл группы применяются лево-сторожные
+    /// LUT (см. [`MultiNeedle::build_guard_luts`]) — до 4 загрузок из
+    /// резидентных таблиц вместо перебора всей группы на каждом ложном хите.
     fn verify_at(&self, hay: &[u8], p: usize, best: &mut Option<(usize, usize)>) -> bool {
         let g = self.byte_to_group[hay[p] as usize];
         if g >= 0 {
-            for &ni in &self.groups[g as usize] {
-                let fbp = self.fb_pos[ni as usize] as usize;
-                if fbp > p {
-                    continue; // игла не помещается левее p
+            let members: &[u32] = &self.groups[g as usize];
+            let luts = &self.guard_luts[g as usize];
+            if luts.is_empty() {
+                for &ni in members {
+                    self.verify_one(hay, p, ni, best);
                 }
-                let s = p - fbp;
-                let nd: &[u8] = &self.needles[ni as usize];
-                if s + nd.len() > hay.len() {
-                    continue;
-                }
-                let pf = &self.prefilter[ni as usize];
-                if hay[s + pf[0].0 as usize] != pf[0].1 || hay[s + pf[1].0 as usize] != pf[1].1 {
-                    continue;
-                }
-                if hay[s..s + nd.len()] != *nd {
-                    continue;
-                }
-                let better = match *best {
-                    None => true,
-                    Some((bs, bi)) => s < bs || (s == bs && (ni as usize) < bi),
+            } else {
+                debug_assert!(members.len() >= 2 && members.len() <= GUARD_MAX_GROUP);
+                let mut alive = if members.len() == GUARD_MAX_GROUP {
+                    u64::MAX
+                } else {
+                    (1u64 << members.len()) - 1
                 };
-                if better {
-                    *best = Some((s, ni as usize));
+                for (idx, lut) in luts.iter().enumerate() {
+                    // p < k+1: позиции левее начала стога; иглы с fbp >= k+1
+                    // там невозможны (не помещаются), остальные LUT не
+                    // покрывает — проверка не несёт ограничений.
+                    if p > idx {
+                        alive &= lut[hay[p - idx - 1] as usize];
+                        if alive == 0 {
+                            break;
+                        }
+                    }
+                }
+                while alive != 0 {
+                    let j = alive.trailing_zeros() as usize;
+                    alive &= alive - 1;
+                    self.verify_one(hay, p, members[j], best);
                 }
             }
         }
@@ -552,6 +635,35 @@ impl MultiNeedle {
         match *best {
             Some((bs, _)) => p + 1 > bs.saturating_add(self.max_fbpos),
             None => false,
+        }
+    }
+
+    /// Полная проверка одной иглы-кандидата на хите p (границы, пре-фильтры,
+    /// memcmp, обновление `best` с левосторонним тай-брейком).
+    #[inline(always)]
+    fn verify_one(&self, hay: &[u8], p: usize, ni: u32, best: &mut Option<(usize, usize)>) {
+        let fbp = self.fb_pos[ni as usize] as usize;
+        if fbp > p {
+            return; // игла не помещается левее p
+        }
+        let s = p - fbp;
+        let nd: &[u8] = &self.needles[ni as usize];
+        if s + nd.len() > hay.len() {
+            return;
+        }
+        let pf = &self.prefilter[ni as usize];
+        if hay[s + pf[0].0 as usize] != pf[0].1 || hay[s + pf[1].0 as usize] != pf[1].1 {
+            return;
+        }
+        if hay[s..s + nd.len()] != *nd {
+            return;
+        }
+        let better = match *best {
+            None => true,
+            Some((bs, bi)) => s < bs || (s == bs && (ni as usize) < bi),
+        };
+        if better {
+            *best = Some((s, ni as usize));
         }
     }
 
@@ -631,6 +743,13 @@ impl MultiNeedle {
 const MULTI_WINDOW: usize = 4096;
 #[cfg(target_arch = "x86_64")]
 const MULTI_HITS_CAP: usize = 512;
+
+// Параметры лево-сторожных LUT (итерация 22): до 4 смещений влево от хита,
+// группы из 2..=64 игл (биткарта u64). LUT: Box<[u64; 256]> = 2 КиБ на
+// смещение — резидентны в L1 во время скана.
+type GuardLut = Box<[u64; 256]>;
+const GUARD_OFFSETS: usize = 4;
+const GUARD_MAX_GROUP: usize = 64;
 
 #[cfg(target_arch = "x86_64")]
 const BITMAP_KIND: u8 = 9;
@@ -1293,5 +1412,105 @@ mod tests {
                 assert_eq!(got, want, "url={url} markers={markers:?}");
             }
         }
+    }
+
+    #[test]
+    fn guard_lut_parity_decoys() {
+        // Итерация 22: лево-сторожные LUT. Все иглы делят фильтр-байт '=';
+        // decoy'и отличаются от игл ТОЛЬКО в сторожевых байтах (левее '=') —
+        // до итерации 22 они проходили пре-фильтры до memcmp, теперь обязаны
+        // отсекаться LUT, а настоящие совпадения — не теряться (паритет).
+        let pats: [&[u8]; 5] = [b"uaby=", b"uabz=", b"qaby=", b"by=", b"y="];
+        // decoy-набор: сдвиги в каждом из сторожевых смещений + проходные
+        let hay: Vec<u8> = [
+            &b"noise "[..],
+            b"vaby=", // k=4: 'v' != 'u' (uaby/uabz)
+            b"waby=", // k=4
+            b"uacy=", // k=3: 'c' != 'a'
+            b"uabx=", // k=2: 'x' != 'b'/'z'
+            b"uaby=", // НАСТОЯЩЕЕ совпадение (индекс 0)
+            b"qabz=", // k=4: 'q'... допустимо для qaby? nd[0]='q' -> жива
+            b"qaby=", // настоящее (индекс 2)
+            b"by=",   // настоящее (индекс 3; fbp=2 — LUT k=3,4 не покрывают)
+            b"y=",    // настоящее (индекс 4; fbp=1)
+            b"xaby=", // k=4: 'x'; k=3: 'a' ok; k=2: 'b' ok; k=1: 'y'/'z'?
+            &b" tail"[..],
+        ]
+        .concat();
+        let got = MultiNeedle::new(&pats)
+            .find(&hay)
+            .map(|m| (m.start, m.needle));
+        assert_eq!(got, naive_multi(&hay, &pats));
+        // левое совпадение: "by=" внутри "vaby=" (s=8, индекс 3) — короче
+        // иглы "uaby=" (s=26) и "y=" (s=9 внутри "vaby="; старт больше)
+        let (s, ni) = got.expect("совпадения обязаны быть");
+        assert_eq!((s, ni), (8, 3), "левое — by= внутри vaby=");
+        assert_eq!(&hay[s..s + 3], b"by=");
+        // проверки у самого начала стога: p < k — LUT пропускаются
+        for head in [&b"y="[..], &b"by="[..], &b"uaby="[..]] {
+            let mut h2 = head.to_vec();
+            h2.extend_from_slice(b"tail uaby= more");
+            let got2 = MultiNeedle::new(&pats)
+                .find(&h2)
+                .map(|m| (m.start, m.needle));
+            assert_eq!(got2, naive_multi(&h2, &pats), "head={head:?}");
+            assert_eq!(got2.map(|(s, _)| s), Some(0), "совпадение в позиции 0");
+        }
+        // decoy-хвост без совпадений: ни один decoy не содержит
+        // "by="/"y=" и не равен длинным иглам (паритет с пустым результатом)
+        let decoys: Vec<u8> = [&b" "[..], b"vabx=", b"uacx=", b"wabz=", &b" "[..]].concat();
+        assert_eq!(
+            MultiNeedle::new(&pats).find(&decoys),
+            None,
+            "decoys не должны совпадать"
+        );
+        assert_eq!(
+            MultiNeedle::new(&pats)
+                .find(&decoys)
+                .map(|m| (m.start, m.needle)),
+            naive_multi(&decoys, &pats)
+        );
+    }
+
+    #[test]
+    fn guard_large_group_fallback_parity() {
+        // группа из 70 игл с общим фильтр-байтом '=' — БЕЗ сторожевых LUT
+        // (> GUARD_MAX_GROUP) — старый путь перебора; паритет с эталоном
+        let pats: Vec<Vec<u8>> = (0..70u32)
+            .map(|i| {
+                let a = b'a' + (i / 26) as u8;
+                let b = b'a' + (i % 26) as u8;
+                vec![a, b, b'=']
+            })
+            .collect();
+        let refs: Vec<&[u8]> = pats.iter().map(|p| p.as_slice()).collect();
+        let hay: Vec<u8> = [
+            &b"zz "[..],
+            &pats[5][..], // "af=" — левое совпадение (индекс 5)
+            b" qq ",
+            &pats[0][..], // "aa=" — декой-позиция для LUT-пути тут нет
+            b" noise ",
+            &pats[69][..], // "cr=" (i=69: 'c'+'r')
+            b" end",
+        ]
+        .concat();
+        let got = MultiNeedle::new(&refs)
+            .find(&hay)
+            .map(|m| (m.start, m.needle));
+        assert_eq!(got, naive_multi(&hay, &refs));
+        let (s, ni) = got.expect("совпадения обязаны быть");
+        assert_eq!(ni, 5, "левая игла — индекс 5");
+        assert_eq!(&hay[s..s + 3], &pats[5][..]);
+        // отсутствующие иглы — None
+        let miss: Vec<u8> = b"aa= af= present, absent: zz=".to_vec();
+        let pats2: Vec<Vec<u8>> = (0..70u32)
+            .map(|i| {
+                let a = b'c' + (i / 26) as u8;
+                let b = b'c' + (i % 26) as u8;
+                vec![a, b, b'=']
+            })
+            .collect();
+        let refs2: Vec<&[u8]> = pats2.iter().map(|p| p.as_slice()).collect();
+        assert_eq!(MultiNeedle::new(&refs2).find(&miss), None);
     }
 }
