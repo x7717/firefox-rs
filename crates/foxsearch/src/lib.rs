@@ -357,27 +357,59 @@ pub fn find_substring(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     None
 }
 
+/// Верификация пакета хитов одного окна (пре-фильтры + memcmp) в порядке
+/// возрастания позиций; первый совпавший кандидат — левейший. Отдельная
+/// функция ради двух точек вызова (полные окна и хвост) с одинаковой
+/// семантикой.
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+fn verify_batch(
+    hay: &[u8],
+    w: usize,
+    buf: &[u16],
+    count: usize,
+    fb: usize,
+    pf: [(usize, u8); 2],
+    needle: &[u8],
+) -> Option<usize> {
+    let n = needle.len();
+    for &off in &buf[..count] {
+        let p = w + off as usize;
+        if p < fb {
+            continue; // кандидат не помещается (окно с начала стога)
+        }
+        let start = p - fb;
+        if start + n <= hay.len()
+            && hay[start + pf[0].0] == pf[0].1
+            && hay[start + pf[1].0] == pf[1].1
+            && hay[start..start + n] == *needle
+        {
+            return Some(start);
+        }
+    }
+    None
+}
+
 /// AVX2-путь B для длинных стогов (итерация 25): пакетный сбор хитов
-/// фильтр-байта окнами 4КБ (мономорфное ядро мульти-сканера,
-/// [`multi_scan_window_avx2`] с `ByteScan::Single`), верификация кандидатов
-/// ПОСЛЕ окна в порядке возрастания позиций — та же схема, что в
-/// `MultiNeedle::find_impl_avx2` (урок итерации 3 соблюдён: скалярная
-/// верификация остаётся ВНЕ горячего цикла ядра).
-///
-/// Левосторонность: хиты собираются по возрастанию внутри окна, окна
-/// обрабатываются по возрастанию; start = p - fb монотонен по p, поэтому
-/// первый совпавший кандидат — левейший, как и в скалярном цикле.
+/// фильтр-байта окнами 4КБ, верификация ПОСЛЕ окна в порядке возрастания
+/// позиций — та же схема, что в `MultiNeedle::find_impl_avx2` (урок
+/// итерации 3 соблюдён: скалярная верификация остаётся ВНЕ горячего цикла
+/// ядра). Левосторонность: хиты и окна по возрастанию, start = p - fb
+/// монотонен по p — первый совпавший кандидат левейший.
 ///
 /// # Safety
 /// Вызывать только при поддержке AVX2 (`simd_level() == SIMD_AVX2`).
 ///
-/// Итерация 25 (CI-вердикт): `#[inline(never)]` обязателен — при инлайне в
-/// каждое место вызова LLVM плодит копии движка с РАЗНОЙ раскладкой кода:
-/// в CI-бинарнике три одинаковых чисто-стримовых бенча разошлись на 10.5%
-/// (207.7 против 229.6 µs за один прогон, std-контролы плоские). Один
-/// out-of-line экземпляр = одна раскладка для всех вызовов; цена — один
-/// call на find(), для стогов >= 4КБ ничего.
+/// Итерация 25 (CI-вердикты): (1) `#[inline(never)]` — один out-of-line
+/// экземпляр движка, инлайн в каждое замыкание бенчей плодит копии с разной
+/// раскладкой; (2) `#[target_feature]` + ИНЛАЙНОВЫЙ K=1 сбор в полных
+/// окнах: вызов `multi_scan_window_avx2` на КАЖДОЕ окно (2525 раз на 10 МБ)
+/// стоил ~25 тактов на вызов (call/setup/dispatch, ~20-25 µs на стог) —
+/// на чистых стримах CI это +10.5..12.9%. Ядро полных окон теперь те же
+/// µops, что у `find_byte_avx2`; хвост делегируется мульти-сканеру
+/// (перекрывающийся финальный блок, скалярная ветка коротких хвостов).
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 #[inline(never)]
 unsafe fn find_substring_path_b_avx2(
     haystack: &[u8],
@@ -385,37 +417,76 @@ unsafe fn find_substring_path_b_avx2(
     fb: usize,
     pf: [(usize, u8); 2],
 ) -> Option<usize> {
-    let n = needle.len();
-    let scan = ByteScan::Single(needle[fb]);
+    use std::arch::x86_64::*;
+
+    let len = haystack.len();
+    let nvec = _mm256_set1_epi8(needle[fb] as i8);
+    let ptr = haystack.as_ptr();
     let mut w = 0usize;
     let mut buf = [0u16; MULTI_HITS_CAP];
-    while w < haystack.len() {
-        let wlen = MULTI_WINDOW.min(haystack.len() - w);
-        // Safety: детекция AVX2 выполнена вызывающим (find_substring);
-        // срез haystack[w..] валиден для чтения.
-        let cnt = multi_scan_window_avx2(&haystack[w..], wlen, &scan, &mut buf);
-        for &off in buf[..cnt].iter() {
-            let p = w + off as usize;
-            if p < fb {
-                continue; // кандидат не помещается (окно с начала стога)
+
+    // Полные окна: инлайновый K=1 сбор (без вызова на окно).
+    while w + MULTI_WINDOW <= len {
+        let wend = w + MULTI_WINDOW;
+        let mut count = 0usize;
+        let mut i = w;
+        while i + 32 <= wend {
+            let chunk = _mm256_loadu_si256(ptr.add(i) as *const __m256i);
+            let m = _mm256_movemask_epi8(_mm256_cmpeq_epi8(chunk, nvec));
+            if m != 0 {
+                let mut mm = m;
+                loop {
+                    buf[count] = (i + mm.trailing_zeros() as usize - w) as u16;
+                    count += 1;
+                    mm &= mm.wrapping_sub(1);
+                    if count == MULTI_HITS_CAP {
+                        // буфер полон: верифицируем и продолжаем сбор
+                        // (проверка ДО break по mm == 0 — иначе count
+                        // остаётся CAP и следующий блок пишет buf[512])
+                        if let Some(s) = verify_batch(haystack, w, &buf, count, fb, pf, needle) {
+                            return Some(s);
+                        }
+                        count = 0;
+                    }
+                    if mm == 0 {
+                        break;
+                    }
+                }
             }
-            let start = p - fb;
-            if start + n <= haystack.len()
-                && haystack[start + pf[0].0] == pf[0].1
-                && haystack[start + pf[1].0] == pf[1].1
-                && haystack[start..start + n] == *needle
-            {
-                return Some(start);
+            i += 32;
+        }
+        if count > 0 {
+            if let Some(s) = verify_batch(haystack, w, &buf, count, fb, pf, needle) {
+                return Some(s);
             }
         }
-        w = if cnt == MULTI_HITS_CAP {
-            // буфер полон: продолжаем с последнего обработанного хита
-            w + buf[cnt - 1] as usize + 1
-        } else {
-            w + MULTI_WINDOW
-        };
+        w = wend;
     }
-    None
+    // Хвост (последнее окно < 4КБ, включая len кратное окнам): мульти-
+    // сканер добирает перекрывающимся финальным блоком / скалярно. Если
+    // буфер заполнился (плотный хвост — multi_scan_blocks_k вернёт раньше
+    // конца окна) — продолжаем с последнего верифицированного хита, как
+    // в find_impl_avx2; иначе после < 512 хитов хвост исчерпан.
+    loop {
+        // Safety: детекция AVX2 выполнена вызывающим (find_substring).
+        let cnt = multi_scan_window_avx2(
+            &haystack[w..],
+            len - w,
+            &ByteScan::Single(needle[fb]),
+            &mut buf,
+        );
+        if let Some(s) = verify_batch(haystack, w, &buf, cnt, fb, pf, needle) {
+            return Some(s);
+        }
+        if cnt == MULTI_HITS_CAP {
+            w += buf[cnt - 1] as usize + 1;
+            if w >= len {
+                return None;
+            }
+        } else {
+            return None;
+        }
+    }
 }
 
 /// Строковая обёртка над [`find_substring`].
