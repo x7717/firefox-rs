@@ -224,9 +224,9 @@ fn trim_c0(s: &str) -> Option<String> {
 
 // --- SWAR-скан «грязных» пробелов (\t \n \r) ---
 
-/// Есть ли во входе \t / \n / \r (фаза 0 WHATWG). 8 байт за итерацию:
-/// XOR каждой иглы с чанком, затем детекция нулевого байта стандартным
-/// трюком (v - 0x01.. & !v & 0x80..). Хвост — побайтово.
+/// Есть ли во входе \t / \n / \r (фаза 0 WHATWG). 16 байт за итерацию
+/// (v0.6: было 8 — два u64-загрузки на чанк дают 2x пропускную
+/// способность на том же наборе XOR-трюков). Хвост — побайтово.
 fn has_dirty_ws(bytes: &[u8]) -> bool {
     const ONES: u64 = 0x0101_0101_0101_0101;
     const HI: u64 = 0x8080_8080_8080_8080;
@@ -234,16 +234,22 @@ fn has_dirty_ws(bytes: &[u8]) -> bool {
     const LF: u64 = 0x0A0A_0A0A_0A0A_0A0A;
     const CR: u64 = 0x0D0D_0D0D_0D0D_0D0D;
 
-    let (chunks, tail) = bytes.as_chunks::<8>();
-    for c in chunks {
-        let x = u64::from_le_bytes(*c);
+    #[inline(always)]
+    fn chunk_hit(x: u64) -> bool {
         let t = x ^ TAB;
         let n = x ^ LF;
         let r = x ^ CR;
         let hit = (t.wrapping_sub(ONES) & !t & HI)
             | (n.wrapping_sub(ONES) & !n & HI)
             | (r.wrapping_sub(ONES) & !r & HI);
-        if hit != 0 {
+        hit != 0
+    }
+
+    let (chunks, tail) = bytes.as_chunks::<16>();
+    for c in chunks {
+        let lo = u64::from_le_bytes(c[..8].try_into().unwrap());
+        let hi = u64::from_le_bytes(c[8..].try_into().unwrap());
+        if chunk_hit(lo) || chunk_hit(hi) {
             return true;
         }
     }
@@ -346,15 +352,30 @@ fn parse_raw(raw: Cow<'_, str>) -> Result<Url<'_>, Error> {
             kind: ErrorKind::RelativeWithoutBase,
         });
     }
+    // v0.6: один табличный проход (SCHEME_TBL) вместо двух: скан схемы
+    // + детект верхнего регистра СЛИТЫ (был второй any(uppercase)-проход).
+    // Быстрый путь строчной буквы/цифры — t == S_OK (один branch).
     let mut i = 1;
-    while i < len && bytes[i] != b':' {
-        let c = bytes[i];
-        if !(c.is_ascii_alphanumeric() || matches!(c, b'+' | b'-' | b'.')) {
+    // Первый байт тоже может быть верхним ("HTTP://") — исходный
+    // any(uppercase) покрывал весь спан схемы, включая позицию 0
+    let mut upper = bytes[0].is_ascii_uppercase();
+    while i < len {
+        let t = SCHEME_TBL[bytes[i] as usize];
+        if t == S_OK {
+            i += 1;
+            continue;
+        }
+        if t == 0 {
             return Err(Error {
                 position: i,
                 kind: ErrorKind::RelativeWithoutBase,
             });
         }
+        if t & S_COLON != 0 {
+            break;
+        }
+        // S_UPPER (всегда вместе с S_OK) — редкий байт
+        upper = true;
         i += 1;
     }
     if i == len {
@@ -364,16 +385,16 @@ fn parse_raw(raw: Cow<'_, str>) -> Result<Url<'_>, Error> {
         });
     }
     let scheme = (0u32, i as u32);
-    let scheme_lower_name: Cow<'_, str> = {
-        let s = &raw[..i];
-        if s.bytes().any(|c| c.is_ascii_uppercase()) {
-            flags |= F_SCHEME_LOWER;
-            Cow::Owned(s.to_ascii_lowercase())
-        } else {
-            Cow::Borrowed(s)
-        }
+    if upper {
+        flags |= F_SCHEME_LOWER;
+    }
+    // lowered-имя нужно только для dispatch scheme_kind (as_str lowers
+    // по флагу F_SCHEME_LOWER): аллокация — ТОЛЬКО на верхнем регистре
+    let kind = if upper {
+        scheme_kind(&raw[..i].to_ascii_lowercase())
+    } else {
+        scheme_kind(&raw[..i])
     };
-    let kind = scheme_kind(&scheme_lower_name);
     i += 1; // ':'
 
     let mut url = Url {
@@ -425,29 +446,43 @@ impl<'a> Url<'a> {
         } else {
             &AUTH_TERM_GENERIC
         };
+        // v0.6: '@' отслеживается САМИМ сканом терминаторов (маркер в
+        // таблице — регистровая запись, ноль вызовов; быстрый путь
+        // обычного байта t == 0 не изменился). Инвариант WHATWG:
+        // '@' не терминирует authority, последний '@' открывает хост.
         let mut i = start;
+        let mut last_at: u32 = u32::MAX;
         while i < len {
-            if term[bytes[i] as usize] != 0 {
+            let t = term[bytes[i] as usize];
+            if t == 0 {
+                i += 1;
+                continue;
+            }
+            if t & AUTH_TERM_BIT != 0 {
                 break;
             }
+            // AUTH_M_AT — редкий байт: предикат вне быстрого пути
+            last_at = i as u32;
             i += 1;
         }
         let auth_end = i;
 
-        // userinfo: последний '@' в authority; структурный ':' и
-        // необходимость кодирования — в ОДНОМ проходе по userinfo-
-        // диапазону (скан региона хоста из прежней версии удалён —
-        // он ложно взводил F_USERINFO_ENC через порт ':' и структурный
-        // ':' пары user:pass, вынуждая полную пересборку as_str).
-        let (userinfo, ui_colon, ui_enc) = parse_userinfo(bytes, start, auth_end);
-        self.userinfo = userinfo;
-        self.userinfo_colon = ui_colon;
-        if ui_enc {
-            self.flags |= F_USERINFO_ENC;
-        }
-        let host_span_start = match userinfo {
-            Some((_, at)) => at as usize + 1,
-            None => start,
+        // userinfo: последний '@' в authority известен из скана. Без '@'
+        // (типичный URL) — парсер userinfo не вызывается вовсе. С '@' —
+        // redo по [start..at+1): rfind_byte находит '@' первым же байтом,
+        // далее точная прежняя семантика (структурный ':' и кодирование
+        // в одном проходе по userinfo-диапазону).
+        let host_span_start = if last_at != u32::MAX {
+            let at = last_at as usize;
+            let (userinfo, ui_colon, ui_enc) = parse_userinfo(bytes, start, at + 1);
+            self.userinfo = userinfo;
+            self.userinfo_colon = ui_colon;
+            if ui_enc {
+                self.flags |= F_USERINFO_ENC;
+            }
+            at + 1
+        } else {
+            start
         };
 
         self.parse_host_and_port(host_span_start, auth_end)?;
@@ -1016,20 +1051,52 @@ const fn build_host_domain_table() -> [u8; 256] {
 static HOST_DOMAIN_TBL: [u8; 256] = build_host_domain_table();
 
 /// Таблица терминаторов authority: '/', '?', '#' и '\\' у спец-схем.
-/// Байт-класс один — «конец authority» (проверка != 0 в цикле скана).
+/// v0.6: кроме бита терминатора — маркер '@' (M_AT): горячий цикл скана
+/// только запоминает ПОСЛЕДНИЙ '@' в регистре, поэтому parse_userinfo
+/// для URL без userinfo (типичный случай) НЕ СКАНИРУЕТ authority вовсе
+/// (раньше rfind_byte('@') проходил весь спан хоста назад). При наличии
+/// '@' — redo-проход только по userinfo-спану (точная прежняя семантика).
+const AUTH_TERM_BIT: u8 = 1 << 0;
+const AUTH_M_AT: u8 = 1 << 1;
 const fn build_auth_term_table(special: bool) -> [u8; 256] {
     let mut t = [0u8; 256];
-    t[b'/' as usize] = 1;
-    t[b'?' as usize] = 1;
-    t[b'#' as usize] = 1;
+    t[b'/' as usize] = AUTH_TERM_BIT;
+    t[b'?' as usize] = AUTH_TERM_BIT;
+    t[b'#' as usize] = AUTH_TERM_BIT;
+    t[b'@' as usize] = AUTH_M_AT;
     if special {
-        t[b'\\' as usize] = 1;
+        t[b'\\' as usize] = AUTH_TERM_BIT;
     }
     t
 }
 
 static AUTH_TERM_SPECIAL: [u8; 256] = build_auth_term_table(true);
 static AUTH_TERM_GENERIC: [u8; 256] = build_auth_term_table(false);
+
+/// Таблица символов схемы: валидный символ схемы (alnum, '+', '-', '.') —
+/// S_OK; верхняя буква дополнительно S_UPPER (детект слит со сканом);
+/// ':' — S_COLON (конец схемы); всё остальное — 0 (ошибка).
+const S_OK: u8 = 1;
+const S_COLON: u8 = 2;
+const S_UPPER: u8 = 4;
+const fn build_scheme_table() -> [u8; 256] {
+    let mut t = [0u8; 256];
+    let mut c = 0usize;
+    while c < 256 {
+        let ch = c as u8;
+        if ch.is_ascii_alphanumeric() || matches!(ch, b'+' | b'-' | b'.') {
+            t[c] = S_OK;
+        }
+        if ch.is_ascii_uppercase() {
+            t[c] |= S_UPPER;
+        }
+        c += 1;
+    }
+    t[b':' as usize] = S_COLON;
+    t
+}
+
+static SCHEME_TBL: [u8; 256] = build_scheme_table();
 
 /// Результат табличного прохода по спану домена.
 struct HostScan {
@@ -1188,12 +1255,18 @@ fn ends_in_a_number(host: &[u8]) -> bool {
     // Последняя непустая часть (хвостовая '.' удаляет ОДНУ пустую часть) —
     // БЕЗ Vec<&[u8]>: скан с конца. Прежний split().collect() аллоцировал
     // Vec на КАЖДОМ доменном URL (3.3% профиля + давление malloc).
+    // v0.6: pre-check по последнему байту — все «числовые» хвосты
+    // (dec / 0x-hex / 0-octal) кончаются ASCII-hex-цифрой; домены вроде
+    // "example.com" отбрасываются без обратного скана сегментов.
     let mut end = host.len();
-    if end >= 2 && host[end - 1] == b'.' {
-        end -= 1;
-    }
     if end == 0 {
-        return false; // "" / "." — частей не осталось
+        return false;
+    }
+    if end >= 2 && host[end - 1] == b'.' {
+        end -= 1; // end >= 2 до декремента — ноль здесь невозможен
+    }
+    if !host[end - 1].is_ascii_hexdigit() {
+        return false;
     }
     let last = match host[..end].iter().rposition(|&c| c == b'.') {
         Some(i) => &host[i + 1..end],
@@ -1280,7 +1353,23 @@ impl<'a> Url<'a> {
             .is_some_and(|p| Some(p) == self.kind.default_port());
         let special_empty_path =
             self.has_authority && self.kind.is_special() && self.path.0 == self.path.1;
-        if self.flags == 0 && self.host_owned.is_none() && !port_elided && !special_empty_path {
+        // v0.6: userinfo должен быть каноничен для zero-copy — сериализатор
+        // опускает '@' при пустых user+pass и ':' при пустом pass, поэтому
+        // "https://@h/", "https://:@h/", "https://user:@h/" не равны raw
+        // (раньше '@'/' :' писались всегда — raw совпадал по построению)
+        let userinfo_canonical = match self.userinfo {
+            None => true,
+            Some((us, ue)) => match self.userinfo_colon {
+                Some(c) => ue > c + 1, // pass непуст — user может быть пустым
+                None => ue > us,       // '@' пишется только при непустом user
+            },
+        };
+        if self.flags == 0
+            && self.host_owned.is_none()
+            && !port_elided
+            && !special_empty_path
+            && userinfo_canonical
+        {
             return Cow::Borrowed(self.raw.as_ref());
         }
         let mut out = String::with_capacity(self.raw.len() + 8);
@@ -1300,33 +1389,52 @@ impl<'a> Url<'a> {
         if self.has_authority {
             out.push_str("//");
 
-            // userinfo: структурный ':' не кодируется, внутренние ':' пароля — да
+            // userinfo: структурный ':' не кодируется, внутренние ':' пароля — да.
+            // v0.6 паритет с WHATWG-сериализатором (нашёл тест-краем):
+            // '@' пишется ТОЛЬКО при непустом user ИЛИ непустом pass
+            // ("https://@h/" и "https://:@h/" сериализуются без userinfo),
+            // ':' — только при непустом pass ("user:@h" -> "user@h").
             if let Some((us, ue)) = self.userinfo {
                 let (us, ue) = (us as usize, ue as usize);
-                let bytes = raw.as_bytes();
-                match self.userinfo_colon {
-                    Some(c) => {
-                        let c = c as usize;
-                        let (user, pass) = (&bytes[us..c], &bytes[c + 1..ue]);
-                        if self.flags & F_USERINFO_ENC != 0 {
-                            write_encoded(&mut out, user, userinfo_needs_enc);
-                            out.push(':');
-                            write_encoded(&mut out, pass, userinfo_needs_enc);
-                        } else {
-                            out.push_str(raw.get(us..c).unwrap_or(""));
-                            out.push(':');
-                            out.push_str(raw.get(c + 1..ue).unwrap_or(""));
+                let colon = self.userinfo_colon.map(|c| c as usize);
+                let has_user = match colon {
+                    Some(c) => c > us,
+                    None => ue > us,
+                };
+                let has_pass = match colon {
+                    Some(c) => ue > c + 1,
+                    None => false,
+                };
+                if has_user || has_pass {
+                    let bytes = raw.as_bytes();
+                    match colon {
+                        Some(c) => {
+                            let (user, pass) = (&bytes[us..c], &bytes[c + 1..ue]);
+                            if self.flags & F_USERINFO_ENC != 0 {
+                                write_encoded(&mut out, user, userinfo_needs_enc);
+                                if has_pass {
+                                    out.push(':');
+                                    write_encoded(&mut out, pass, userinfo_needs_enc);
+                                }
+                            } else {
+                                out.push_str(raw.get(us..c).unwrap_or(""));
+                                if has_pass {
+                                    out.push(':');
+                                    out.push_str(raw.get(c + 1..ue).unwrap_or(""));
+                                }
+                            }
+                        }
+                        None => {
+                            // colon нет — has_user == (ue > us) истинно здесь
+                            if self.flags & F_USERINFO_ENC != 0 {
+                                write_encoded(&mut out, &bytes[us..ue], userinfo_needs_enc);
+                            } else {
+                                out.push_str(&raw[us..ue]);
+                            }
                         }
                     }
-                    None => {
-                        if self.flags & F_USERINFO_ENC != 0 {
-                            write_encoded(&mut out, &bytes[us..ue], userinfo_needs_enc);
-                        } else {
-                            out.push_str(&raw[us..ue]);
-                        }
-                    }
+                    out.push('@');
                 }
-                out.push('@');
             }
 
             // хост (owned / lowercased / raw). Хост — чистый ASCII
@@ -1498,12 +1606,15 @@ impl<'a> Url<'a> {
         }
     }
 
-    /// Пароль (Some только если ':' присутствует в userinfo). Сырой спан
-    /// входа (см. [`Url::username`] — расхождение с url для кодируемых
-    /// байтов); канонический вид — [`Url::as_str`].
+    /// Пароль (Some только если ':' присутствует и пароль НЕПУСТ —
+    /// v0.6 паритет с `url::Url::password`, который хранит пустой пароль
+    /// как отсутствие; сырой спан входа — см. [`Url::username`]).
     pub fn password(&self) -> Option<&str> {
         match (self.userinfo, self.userinfo_colon) {
-            (Some((_, ue)), Some(c)) => Some(&self.raw[c as usize + 1..ue as usize]),
+            (Some((_, ue)), Some(c)) => {
+                let pass = &self.raw[c as usize + 1..ue as usize];
+                (!pass.is_empty()).then_some(pass)
+            }
             _ => None,
         }
     }
@@ -1909,6 +2020,91 @@ mod tests {
             );
             assert_eq!(ours.path().as_ref(), url::Url::parse(input).unwrap().path());
         }
+    }
+
+    /// v0.6: схема — верхний регистр (в т.ч. ПЕРВОГО байта — теперь он
+    /// тоже входит в слитый детект), двойной '@' (последний открывает
+    /// хост, первый кодируется), ПУСТОЙ userinfo (WHATWG-сериализатор
+    /// опускает '@' при пустых user+pass и ':' при пустом pass — баг
+    /// паритета с `url`, найден краевым тестом); хвосты
+    /// ends-in-a-number. Паритет as_str с `url` на каждом случае.
+    #[test]
+    fn scheme_upper_userinfo_and_number_tails() {
+        for input in [
+            "HTTP://example.com/",        // верхний ПЕРВЫЙ байт схемы
+            "hTtPs://Example.COM/Path",   // смешанный регистр схемы
+            "HTTPS://a@b@Example.com/",   // двойной '@' — последний хост
+            "https://@example.com/",      // пустой userinfo — '@' опускается
+            "https://:@example.com/",     // оба пусты — '@' опускается
+            "https://user:@example.com/", // пустой pass — ':' опускается
+            "https://:pass@example.com/", // пустой user — ':pass' остаётся
+            "https://user:secret@EXAMPLE.com/secure/path",
+            "http://example.com./",   // хвостовая точка — не число
+            "http://0x7f.0x1/",       // hex-хвост -> IPv4
+            "http://example.0x1f.1/", // 0x-сегмент не в конце
+            "http://010.1/",          // octal-хвост
+            "WS://ex.com:80/chat",    // спец-схема верхним регистром
+        ] {
+            let ours = parse(input);
+            let theirs = url::Url::parse(input);
+            assert_eq!(
+                ours.as_ref().map(|u| u.as_str().into_owned()).ok(),
+                theirs.as_ref().ok().map(|u| u.as_str().to_string()),
+                "as_str parity: {input}"
+            );
+        }
+        // компоненты двойного '@': user — сырой спан "a@b" (документированное
+        // расхождение с url, который даёт канонический "a%40b"); пароль None
+        let o = parse("HTTPS://a@b@Example.com/").unwrap();
+        let t = url::Url::parse("https://a@b@example.com/").unwrap();
+        assert_eq!(o.username(), "a@b");
+        assert_eq!(t.username(), "a%40b");
+        assert_eq!(o.password(), t.password());
+        // хост: у нас сырой спан ("Example.com"), канонический (lowercase)
+        // даёт as_str (паритет с as_str(url) уже проверен выше)
+        assert_eq!(o.host_str().as_deref(), Some("Example.com"));
+        assert_eq!(t.host_str(), Some("example.com"));
+        // пустой/непустой пароль: None vs Some — как у url
+        for input in [
+            "https://user:@example.com/",
+            "https://:pass@example.com/",
+            "https://:@example.com/",
+            "https://@example.com/",
+        ] {
+            let o = parse(input).unwrap();
+            let t = url::Url::parse(input).unwrap();
+            assert_eq!(o.password(), t.password(), "password: {input}");
+        }
+    }
+
+    /// Границы u128-чанков SWAR-скана грязных пробелов (16Б/итер):
+    /// \t/\n/\r ровно на 15/16/17-м байте и в самом хвосте.
+    #[test]
+    fn dirty_ws_chunk_boundaries() {
+        // базовый "http://ex.com/" = 14 байт; добиваем путь до 15..=34
+        for pad in 0..=20usize {
+            let mut u = String::from("http://ex.com/");
+            for _ in 0..pad {
+                u.push('a');
+            }
+            u.push('\t');
+            let clean = u.replace('\t', "");
+            assert_eq!(
+                parse(&u).unwrap().as_str(),
+                parse(&clean).unwrap().as_str(),
+                "tab at byte {} (pad={pad})",
+                u.len()
+            );
+        }
+        // \n и \r в середине, \r перед ':'
+        assert_eq!(
+            parse("http://ex\n.com/a").unwrap().as_str(),
+            "http://ex.com/a"
+        );
+        assert_eq!(
+            parse("http\r://ex.com/a").unwrap().as_str(),
+            "http://ex.com/a"
+        );
     }
 
     /// Элизия порта по умолчанию.
