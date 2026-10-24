@@ -142,6 +142,11 @@ const F_PATH_ENC: u8 = 1 << 3;
 const F_QUERY_ENC: u8 = 1 << 4;
 const F_FRAG_ENC: u8 = 1 << 5;
 const F_USERINFO_ENC: u8 = 1 << 6;
+/// В authority был ':' с ПУСТЫМ портом («ex.com:/path»): каноническая
+/// сериализация опускает двоеточие, поэтому raw не pristine даже при
+/// чистых флагах — нужен rebuild (итерация 16, найдено порт-тестом:
+/// «http://ex.com:/path» возвращал raw с лишним ':').
+const F_PORT_EMPTY: u8 = 1 << 7;
 
 // ---------------------------------------------------------------------------
 // Url
@@ -568,6 +573,10 @@ impl<'a> Url<'a> {
                 }
                 has_port = true;
                 port_span = (host_end + 1, end);
+                if port_span.0 == port_span.1 {
+                    // пустой порт после IPv6-хоста: ':' не пишется
+                    self.flags |= F_PORT_EMPTY;
+                }
             }
         } else {
             // --- домен или IPv4: ОДИН табличный проход по спану хоста
@@ -582,6 +591,10 @@ impl<'a> Url<'a> {
                 host_end = scan.host_end;
                 has_port = true;
                 port_span = (host_end + 1, end);
+                if port_span.0 == port_span.1 {
+                    // пустой порт («ex.com:/path»): ':' не пишется (v0.7.1)
+                    self.flags |= F_PORT_EMPTY;
+                }
             }
             self.parse_domain(from, host_end, scan)?;
         }
@@ -2647,23 +2660,80 @@ mod tests {
         }
     }
 
+    /// Порт (v0.7-покрытие, итерация 16): цифры/переполнение/пустой/ноль
+    /// и \t\n\r в спане порта — паритет с url. Порт-спан не проходится
+    /// таблицей хоста (скан уходит в early-return на ':') — грязь ловит
+    /// authority-скан (рестарт), цифры — общий цикл порта; оба пути
+    /// обязаны совпадать с url (он чистит \t\n\r до разбора).
+    #[test]
+    fn port_parity_and_dirty_restart() {
+        let cases = [
+            "http://ex.com:80/",
+            "http://ex.com:0/",
+            "http://ex.com:65535/",
+            "http://ex.com:65536/",
+            "http://ex.com:99999/",
+            "http://ex.com:99999999999/",
+            "http://ex.com:/path",
+            "http://ex.com:",
+            "http://ex.com:80a/",
+            "http://ex.com:a80/",
+            "http://ex.com:8 0/",
+            "http://127.0.0.1:9000/debug",
+            "https://[::1]:8443/x",
+            "https://[::1]:/",
+            "https://[::1]:8a/",
+            "ftp://files.example.org:21/pub/linux/",
+            // \t\n\r в порту: рестарт фазы 0 (8\t43 -> 843), а не InvalidPort
+            "https://example.com:8\t43/",
+            "https://example.com:84\n3",
+            "http://x:8\r0/",
+            "https://example.com:8080\tx/",
+            "http://x:9\ta/",
+            "http://x:99\t/",
+            "http://x:\t80/",
+            "http://x:80\t:/",
+            // пустой порт + прочие компоненты / generic-схема
+            "x://h:/",
+            "x://h:/a/b?c=d#e",
+            "http://ex.com:?q=1#f",
+            "https://[2001:db8::1]:/m",
+            "http://user@ex.com:/p",
+        ];
+        for case in cases {
+            match (url::Url::parse(case), crate::parse(case)) {
+                (Ok(e), Ok(o)) => assert_eq!(o.as_str(), e.as_str(), "case={case:?}"),
+                (Err(_), Err(_)) => {}
+                (e, o) => panic!("case={case:?}: url={e:?} ours={o:?}"),
+            }
+        }
+    }
+
     /// v0.7 отложенная фаза 0: \t\n\r на КАЖДОЙ позиции URL (все
     /// компоненты — схема-края не бывает, authority, путь, запрос,
     /// фрагмент) и обрезаемые края — ok/err и сериализация паритетны
     /// url-крейту (он всегда чистит до разбора — эталон рестарта).
     #[test]
     fn deferred_dirty_ws_restart_parity() {
-        let base = "https://example.com/path/x?q=1#f";
-        for pos in 0..=base.len() {
-            for ws in ["\t", "\n", "\r"] {
-                let mut s = String::with_capacity(base.len() + 1);
-                s.push_str(&base[..pos]);
-                s.push_str(ws);
-                s.push_str(&base[pos..]);
-                match (url::Url::parse(&s), crate::parse(&s)) {
-                    (Ok(e), Ok(o)) => assert_eq!(o.as_str(), e.as_str(), "pos={pos} ws={ws:?}"),
-                    (Err(_), Err(_)) => {}
-                    (e, o) => panic!("pos={pos} ws={ws:?}: url={e:?} ours={o:?}"),
+        // Вторая база — С ПОРТОМ (итерация 16): вставка \t\n\r в спан
+        // порта обязана давать рестарт (8\t43 -> 843), а не InvalidPort.
+        for base in [
+            "https://example.com/path/x?q=1#f",
+            "http://example.com:8080/path/x?q=1#f",
+        ] {
+            for pos in 0..=base.len() {
+                for ws in ["\t", "\n", "\r"] {
+                    let mut s = String::with_capacity(base.len() + 1);
+                    s.push_str(&base[..pos]);
+                    s.push_str(ws);
+                    s.push_str(&base[pos..]);
+                    match (url::Url::parse(&s), crate::parse(&s)) {
+                        (Ok(e), Ok(o)) => {
+                            assert_eq!(o.as_str(), e.as_str(), "pos={pos} ws={ws:?}")
+                        }
+                        (Err(_), Err(_)) => {}
+                        (e, o) => panic!("pos={pos} ws={ws:?}: url={e:?} ours={o:?}"),
+                    }
                 }
             }
         }
