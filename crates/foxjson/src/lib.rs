@@ -653,6 +653,37 @@ impl<'a> TapeParser<'a> {
         }
     }
 
+    /// Итерация 14 — СЛИЯНИЕ skip_ws + peek (fused token fetch).
+    ///
+    /// Продвигает `pos` за пробелами и возвращает ПЕРВЫЙ байт токена,
+    /// НЕ потребляя его (pos остаётся НА токене — parse_string/lit/number
+    /// читают с pos). `None` — EOF (pos == len).
+    ///
+    /// До слияния цикл пары объекта делал 8 гранично-проверяемых пиков
+    /// (skip_ws×4 + peek×4); после — 4 (см. WORKLOG, итерация 14).
+    /// Компактные документы (session/nums/strs — весь бенч-корпус) всегда
+    /// идут по быстрому пути: одна загрузка, один branch.
+    #[inline]
+    fn next_tok(&mut self) -> Option<u8> {
+        match self.bytes.get(self.pos) {
+            None => None,
+            Some(&b) if !matches!(b, b' ' | b'\t' | b'\n' | b'\r') => Some(b),
+            Some(_) => {
+                self.skip_ws_slow();
+                self.bytes.get(self.pos).copied()
+            }
+        }
+    }
+
+    /// Токен с пропуском пробелов или ошибка UnexpectedEof.
+    #[inline]
+    fn next_tok_or_eof(&mut self) -> Result<u8, Error> {
+        match self.next_tok() {
+            Some(t) => Ok(t),
+            None => Err(self.err(ErrorKind::UnexpectedEof)),
+        }
+    }
+
     fn enter(&mut self) -> Result<(), Error> {
         self.depth += 1;
         if self.depth > MAX_DEPTH {
@@ -661,18 +692,26 @@ impl<'a> TapeParser<'a> {
         Ok(())
     }
 
-    fn parse_value(&mut self) -> Result<(), Error> {
-        match self.peek() {
-            None => Err(self.err(ErrorKind::UnexpectedEof)),
-            Some(b'{') => self.parse_object(),
-            Some(b'[') => self.parse_array(),
-            Some(b'"') => self.parse_string(),
-            Some(b't') => self.parse_lit(b"true", TAG_BOOL, 1),
-            Some(b'f') => self.parse_lit(b"false", TAG_BOOL, 0),
-            Some(b'n') => self.parse_lit(b"null", TAG_NULL, 0),
-            Some(b'-') | Some(b'0'..=b'9') => self.parse_number(),
-            Some(c) => Err(self.err(ErrorKind::UnexpectedChar(c))),
+    /// Диспетчеризация значения по УЖЕ ВЫБРАННОМУ токену (итерация 14):
+    /// вызывающий (цикл контейнера или [`Self::parse_value`]) получил токен
+    /// через [`Self::next_tok`] — двойной peek/value-загрузки больше нет.
+    /// pos стоит НА токене, `parse_string/lit/number` читают с pos.
+    fn parse_value_tok(&mut self, t: u8) -> Result<(), Error> {
+        match t {
+            b'{' => self.parse_object(),
+            b'[' => self.parse_array(),
+            b'"' => self.parse_string(),
+            b't' => self.parse_lit(b"true", TAG_BOOL, 1),
+            b'f' => self.parse_lit(b"false", TAG_BOOL, 0),
+            b'n' => self.parse_lit(b"null", TAG_NULL, 0),
+            b'-' | b'0'..=b'9' => self.parse_number(),
+            _ => Err(self.err(ErrorKind::UnexpectedChar(t))),
         }
+    }
+
+    fn parse_value(&mut self) -> Result<(), Error> {
+        let t = self.next_tok_or_eof()?;
+        self.parse_value_tok(t)
     }
 
     /// Литерал (true/false/null): узел пишется сразу.
@@ -1050,10 +1089,12 @@ impl<'a> TapeParser<'a> {
         }
     }
 
+    /// Итерация 14 — токен-трединг: элементный цикл несёт УЖЕ ВЫБРАННЫЙ
+    /// токен (next_tok после `{`/`,`) прямо в parse_value_tok; самостоятельного
+    /// peek в диспетчере больше нет. На элемент: 2 пика вместо 4.
     fn parse_array(&mut self) -> Result<(), Error> {
         self.enter()?;
         self.pos += 1; // `[`
-        self.skip_ws();
         let head = self.tape.len();
         self.tape.push(Node {
             hdr: TAG_ARRAY,
@@ -1061,7 +1102,8 @@ impl<'a> TapeParser<'a> {
             b: 0, // индекс CLOSE-узла, патчится ниже
         });
         let mut count: u32 = 0;
-        if self.peek() == Some(b']') {
+        let mut t = self.next_tok_or_eof()?;
+        if t == b']' {
             self.pos += 1;
             self.depth -= 1;
             let close = self.tape.len();
@@ -1075,12 +1117,13 @@ impl<'a> TapeParser<'a> {
             return Ok(());
         }
         loop {
-            self.skip_ws();
-            self.parse_value()?;
+            self.parse_value_tok(t)?;
             count += 1;
-            self.skip_ws();
-            match self.peek() {
-                Some(b',') => self.pos += 1,
+            t = match self.next_tok() {
+                Some(b',') => {
+                    self.pos += 1; // потребить ',' — next_tok НЕ продвигает
+                    self.next_tok_or_eof()?
+                }
                 Some(b']') => {
                     self.pos += 1;
                     self.depth -= 1;
@@ -1096,14 +1139,16 @@ impl<'a> TapeParser<'a> {
                 }
                 Some(c) => return Err(self.err(ErrorKind::UnexpectedChar(c))),
                 None => return Err(self.err(ErrorKind::UnexpectedEof)),
-            }
+            };
         }
     }
 
+    /// Итерация 14 — токен-трединг: 4 пика на пару вместо 8 (skip_ws×4 +
+    /// peek×4 → next_tok×4, диспетчер значения бесплатен — токен передаётся
+    /// прямо в parse_value_tok).
     fn parse_object(&mut self) -> Result<(), Error> {
         self.enter()?;
         self.pos += 1; // `{`
-        self.skip_ws();
         let head = self.tape.len();
         self.tape.push(Node {
             hdr: TAG_OBJECT,
@@ -1111,7 +1156,8 @@ impl<'a> TapeParser<'a> {
             b: 0,
         });
         let mut pairs: u32 = 0;
-        if self.peek() == Some(b'}') {
+        let mut t = self.next_tok_or_eof()?;
+        if t == b'}' {
             self.pos += 1;
             self.depth -= 1;
             let close = self.tape.len();
@@ -1125,25 +1171,25 @@ impl<'a> TapeParser<'a> {
             return Ok(());
         }
         loop {
-            self.skip_ws();
-            match self.peek() {
-                Some(b'"') => {}
-                Some(c) => return Err(self.err(ErrorKind::UnexpectedChar(c))),
-                None => return Err(self.err(ErrorKind::UnexpectedEof)),
+            if t != b'"' {
+                return Err(self.err(ErrorKind::UnexpectedChar(t)));
             }
             self.parse_string()?; // ключ
-            self.skip_ws();
-            match self.peek() {
-                Some(b':') => self.pos += 1,
+            t = match self.next_tok() {
+                Some(b':') => {
+                    self.pos += 1; // потребить ':' — next_tok НЕ продвигает
+                    self.next_tok_or_eof()?
+                }
                 Some(c) => return Err(self.err(ErrorKind::UnexpectedChar(c))),
                 None => return Err(self.err(ErrorKind::UnexpectedEof)),
-            }
-            self.skip_ws();
-            self.parse_value()?; // значение
+            };
+            self.parse_value_tok(t)?; // значение
             pairs += 1;
-            self.skip_ws();
-            match self.peek() {
-                Some(b',') => self.pos += 1,
+            t = match self.next_tok() {
+                Some(b',') => {
+                    self.pos += 1; // потребить ',' — next_tok НЕ продвигает
+                    self.next_tok_or_eof()?
+                }
                 Some(b'}') => {
                     self.pos += 1;
                     self.depth -= 1;
@@ -1159,7 +1205,7 @@ impl<'a> TapeParser<'a> {
                 }
                 Some(c) => return Err(self.err(ErrorKind::UnexpectedChar(c))),
                 None => return Err(self.err(ErrorKind::UnexpectedEof)),
-            }
+            };
         }
     }
 }
@@ -1482,6 +1528,70 @@ mod tests {
     fn depth_limit_ok() {
         let ok = "[".repeat(128) + &"]".repeat(128);
         assert!(parse(&ok).is_ok());
+    }
+
+    /// Итерация 14 (токен-трединг контейнеров): пробелы на КАЖДОЙ позиции
+    /// разделителя — через них next_tok обязан проходить корректно, а
+    /// разделители (`,`/`:`) — ПОТРЕБЛЯТЬСЯ ровно один раз (баг первой
+    /// попытки: next_tok не продвигает pos, двойное чтение `,`/`:`).
+    /// Эталон структуры — serde_json; ошибки — вид И позиция.
+    #[test]
+    fn container_token_fusion_edges() {
+        // 1) пробелы во всех позициях вокруг разделителей и границ;
+        //    структура эквивалентна serde_json
+        let spaced = r#"{
+            "a" : [ 1 , 2 , { } ] ,
+            "b" : { "x" : null , "y" : [ true ] } ,
+            "c" : [ ]
+        }"#;
+        let v: SValue = serde_json::from_str(spaced).unwrap();
+        assert!(equiv(parse_ok(spaced).root(), &v));
+        // compact-контроль той же структуры
+        let compact = r#"{"a":[1,2,{}],"b":{"x":null,"y":[true]},"c":[]}"#;
+        let v: SValue = serde_json::from_str(compact).unwrap();
+        assert!(equiv(parse_ok(compact).root(), &v));
+
+        // 2) EOF сразу после разделителя — UnexpectedEof
+        assert_eq!(parse("[1,").unwrap_err().kind, ErrorKind::UnexpectedEof);
+        assert_eq!(parse("[1, ").unwrap_err().kind, ErrorKind::UnexpectedEof);
+        assert_eq!(
+            parse(r#"{"a":"#).unwrap_err().kind,
+            ErrorKind::UnexpectedEof
+        );
+        assert_eq!(
+            parse(r#"{"a":1,"#).unwrap_err().kind,
+            ErrorKind::UnexpectedEof
+        );
+        assert_eq!(
+            parse(r#"{"a":1, "#).unwrap_err().kind,
+            ErrorKind::UnexpectedEof
+        );
+
+        // 3) вид И ПОЗИЦИЯ ошибок в новых ветках (pos = байт нарушения)
+        let e = parse("[1,]").unwrap_err();
+        assert_eq!(e.kind, ErrorKind::UnexpectedChar(b']'));
+        assert_eq!(e.position, 3);
+        let e = parse(r#"{"a":}"#).unwrap_err();
+        assert_eq!(e.kind, ErrorKind::UnexpectedChar(b'}'));
+        assert_eq!(e.position, 5);
+        let e = parse(r#"{"a" 1}"#).unwrap_err();
+        assert_eq!(e.kind, ErrorKind::UnexpectedChar(b'1'));
+        assert_eq!(e.position, 5);
+        let e = parse("{1:2}").unwrap_err();
+        assert_eq!(e.kind, ErrorKind::UnexpectedChar(b'1'));
+        assert_eq!(e.position, 1);
+        let e = parse("[,1]").unwrap_err();
+        assert_eq!(e.kind, ErrorKind::UnexpectedChar(b','));
+        assert_eq!(e.position, 1);
+        // пробелы ПЕРЕД нарушением: pos после пропуска ws
+        let e = parse("[1 , ]").unwrap_err();
+        assert_eq!(e.kind, ErrorKind::UnexpectedChar(b']'));
+        assert_eq!(e.position, 5);
+
+        // 4) вложенные пустые контейнеры и хвост-разделители
+        let nested = r#"{"a":[{},[],[[]]],"b":{},"c":null}"#;
+        let v: SValue = serde_json::from_str(nested).unwrap();
+        assert!(equiv(parse_ok(nested).root(), &v));
     }
 
     /// Структурная эквивалентность с serde_json на составном документе.
