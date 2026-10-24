@@ -408,6 +408,10 @@ pub struct MultiNeedle {
     byte_to_group: [i16; 256],
     max_fbpos: usize,
     empty_idx: Option<usize>,
+    /// Сканер множества фильтр-байтов, предвычислен в конструкторе (итерация
+    /// 21): в сценарии «классификатор» (поток коротких URL) per-call
+    /// построение сканера стоило столько же, сколько сам скан URL.
+    scan: ByteScan,
 }
 
 impl MultiNeedle {
@@ -420,6 +424,7 @@ impl MultiNeedle {
             byte_to_group: [-1i16; 256],
             max_fbpos: 0,
             empty_idx: None,
+            scan: ByteScan::Bitmap { rows: [0; 16] }, // замещается после цикла
         };
         for (idx, nd) in needles.iter().enumerate() {
             mn.needles.push((*nd).into());
@@ -455,6 +460,7 @@ impl MultiNeedle {
             mn.groups[gi].push(idx as u32);
             mn.max_fbpos = mn.max_fbpos.max(fb);
         }
+        mn.scan = mn.build_scan();
         mn
     }
 
@@ -550,14 +556,13 @@ impl MultiNeedle {
     }
 
     fn find_impl(&self, hay: &[u8]) -> Option<MultiMatch> {
-        let scan = self.build_scan();
         #[cfg(target_arch = "x86_64")]
         {
             if simd_level() == SIMD_AVX2 {
-                return self.find_impl_avx2(hay, &scan);
+                return self.find_impl_avx2(hay, &self.scan);
             }
         }
-        self.find_impl_scalar(hay, &scan)
+        self.find_impl_scalar(hay, &self.scan)
     }
 
     /// Портабельный путь: хит-за-хитом (корректность важнее скорости —
@@ -820,6 +825,120 @@ pub mod sample {
         let mut s = PARAGRAPH.repeat(paragraphs);
         s.push_str(" Mozilla Corporation. горячие пути. https://example.com/search?q=firefox+rust&lang=ru\n");
         s
+    }
+
+    // --- сценарий «URL classifier» (итерация 21) ---
+
+    /// Маркеры классификатора: 8 «горячих» (трекинг-параметры, есть в потоке)
+    /// и 24 «холодных» (рекомендательные/аналитические домены, большей частью
+    /// отсутствуют). Реалистичная смесь: часть маркеров попадается, часть —
+    /// чистый скан до конца URL.
+    pub const MARKERS_8: [&str; 8] = [
+        "utm_source=",
+        "utm_medium=",
+        "fbclid=",
+        "gclid=",
+        "yclid=",
+        "ref=producthunt",
+        "mc_cid=",
+        "_openstat=",
+    ];
+
+    pub const MARKERS_32: [&str; 32] = [
+        "utm_source=",
+        "utm_medium=",
+        "utm_campaign=",
+        "utm_term=",
+        "utm_content=",
+        "fbclid=",
+        "gclid=",
+        "yclid=",
+        "ymclid=",
+        "mc_cid=",
+        "mc_eid=",
+        "_openstat=",
+        "ref=producthunt",
+        "vk.target=",
+        "tgid=",
+        "vrn=",
+        "adfox.ru",
+        "adriver.ru",
+        "doubleclick.net",
+        "googlesyndication",
+        "criteo.com",
+        "taboola.com",
+        "outbrain.com",
+        "mgid.com",
+        "admitad.com",
+        "cityads.ru",
+        "mediascope.net",
+        "top-fwz1.mail.ru",
+        "mc.yandex.ru",
+        "google-analytics.com",
+        "analytics.",
+        "malware-download.ru",
+    ];
+
+    /// Детерминированный поток из `n` URL реалистичной формы (хосты, пути,
+    /// query-строки с трекинг-параметрами и без; часть URL с кириллицей).
+    /// LCG — как в тестах, без внешних зависимостей.
+    pub fn url_stream(n: usize) -> Vec<String> {
+        const HOSTS: [&str; 6] = [
+            "https://example.com",
+            "https://shop.example.org",
+            "http://news.site.ru",
+            "https://cdn.assets.net",
+            "https://api.service.io",
+            "http://login.portal.edu",
+        ];
+        const PATHS: [&str; 8] = [
+            "/index.html",
+            "/search?q=",
+            "/api/v2/items?page=",
+            "/images/logo.png",
+            "/user/profile?id=",
+            "/static/app.min.js",
+            "/catalog/product/sku",
+            "/articles/2026/10/zapiski",
+        ];
+        const QUERIES: [&str; 8] = [
+            "",
+            "utm_source=feed&utm_medium=referral",
+            "q=поиск+firefox&lang=ru",
+            "ref=producthunt&fbclid=IwAR2x",
+            "id=12345&page=2&sort=desc",
+            "gclid=Cj0KCQjw9&yclid=7712345",
+            "mc_cid=ab12cd&utm_campaign=sale",
+            "session=abcdef0123456789",
+        ];
+        let mut seed: u64 = 0x000C_1A55_1F1E;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let mut out = Vec::with_capacity(n);
+        for i in 0..n {
+            let h = HOSTS[(next() % 6) as usize];
+            let p = PATHS[(next() % 8) as usize];
+            let mut url = String::from(h);
+            url.push_str(p);
+            if p.ends_with('=') {
+                // путь уже содержит "x=" — добавляем значение
+                url.push_str(&(next() % 100_000).to_string());
+            }
+            let q = QUERIES[(next() % 8) as usize];
+            if !q.is_empty() {
+                url.push(if p.ends_with('=') { '&' } else { '?' });
+                url.push_str(q);
+            }
+            if i % 17 == 0 {
+                url.push_str("&lang=ru");
+            }
+            out.push(url);
+        }
+        out
     }
 }
 
@@ -1147,6 +1266,32 @@ mod tests {
                 s > hay.len() - 300,
                 "левое совпадение должно сидеть в хвосте документа"
             );
+        }
+    }
+
+    #[test]
+    fn classifier_stream_parity() {
+        // сценарий «URL classifier»: MultiNeedle по потоку коротких URL
+        // обязан совпадать с naive-эталоном на каждом URL, оба набора маркеров
+        let stream = sample::url_stream(200);
+        assert!(stream.len() == 200);
+        assert!(stream.iter().all(|u| !u.is_empty()));
+        // в потоке есть и «чистые» URL, и URL с маркерами
+        let mn8 = MultiNeedle::from_strs(&sample::MARKERS_8);
+        let hits8 = stream
+            .iter()
+            .filter(|u| mn8.find(u.as_bytes()).is_some())
+            .count();
+        assert!(hits8 > 20, "маркеры должны встречаться в потоке: {hits8}");
+        assert!(hits8 < 200, "часть URL должна быть чистой: {hits8}");
+        for markers in [&sample::MARKERS_8[..], &sample::MARKERS_32[..]] {
+            let bytes: Vec<&[u8]> = markers.iter().map(|m| m.as_bytes()).collect();
+            let mn = MultiNeedle::new(&bytes);
+            for url in &stream {
+                let got = mn.find(url.as_bytes()).map(|m| (m.start, m.needle));
+                let want = naive_multi(url.as_bytes(), &bytes);
+                assert_eq!(got, want, "url={url} markers={markers:?}");
+            }
         }
     }
 }

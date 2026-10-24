@@ -4,7 +4,7 @@
 Каждое изменение доказывается числами: benchmark до/после + профилирование.
 Оптимизируем то, что профиль показывает самым тяжёлым.
 
-## Текущие результаты (итерация 20: foxsearch v0.2 — мульти-игольный поиск, один проход против N)
+## Текущие результаты (итерация 21: foxsearch v0.2.1 — сценарий «URL classifier», предвычисленный сканер)
 
 | Крейт | Бенчмарк | Эталон | Итог |
 |---|---|---|---|
@@ -18,6 +18,8 @@
 | foxsearch | multi-2 (2 иглы за проход) | 2× find_substring | **1.5–2.0x быстрее** |
 | foxsearch | multi-4 (4 иглы за проход) | 4× find_substring | **2.7–3.0x быстрее** |
 | foxsearch | multi-8 (8 игл за проход) | 8× find_substring | **3.4–3.8x быстрее** (6.8x от 8× std::str::find) |
+| foxsearch | classifier-8 (поток 200 URL × 8 маркеров) | 8× find_substring/URL | **4.0x быстрее** (5.9x от 8× std) |
+| foxsearch | classifier-32 (поток 200 URL × 32 маркера) | 32× find_substring/URL | **6.6x быстрее** (15.4x от 32× std) |
 | foxurl | parse/corpus-all (14 URL) | url | **4.8x быстрее** (0.85 µs vs ~4.0 µs same-run) |
 | foxurl | canonical/corpus-all (parse+as_str, 14 URL) | url | **4.1x быстрее** (0.98 µs vs ~4.0 µs; было 2.0x) |
 | foxurl | serialize/dirty-all (as_str, 7 грязных URL) | — | **-15%** за итерацию 11 (css-URL 156 -> 4 ns = -97.4%) |
