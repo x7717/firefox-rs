@@ -11,6 +11,15 @@
 //! таблице РЕДКОСТИ (`pick_filter_byte`), кандидаты проходят два дешёвых
 //! байтовых пре-фильтра и только затем полный memcmp.
 //!
+//! Мульти-игольный поиск ([`MultiNeedle`], итерация 20): ОДИН проход по стогу
+//! против N независимых `find_substring` (N полных проходов). Скан ведётся по
+//! ОБЪЕДИНЁННОМУ множеству редчайших байт игл: |S|<=8 — OR из cmpeq (точно),
+//! |S|>8 — PSHUFB-биткарта (ложные срабатывания возможны только внутри пары
+//! байт b/b^8 и отсекаются верификацией). Хиты собираются ПАКЕТАМИ по окну
+//! 4КБ (один вызов ядра на окно — без перестройки векторов на каждый хит),
+//! кандидаты сверяются по группам игл с общим фильтр-байтом; возвращается
+//! ЛЕВОЕ совпадение (минимум старта, тай-брейк — меньший индекс иглы).
+//!
 //! Эталон для сравнения — `std::str::find` (внутри которого тоже memchr).
 
 const LO: u64 = 0x0101_0101_0101_0101;
@@ -330,6 +339,468 @@ pub fn find_substring_str(haystack: &str, needle: &str) -> Option<usize> {
     find_substring(haystack.as_bytes(), needle.as_bytes())
 }
 
+// ---------------------------------------------------------------------------
+// Мульти-игольный поиск (итерация 20)
+// ---------------------------------------------------------------------------
+
+/// Результат [`MultiNeedle::find`]: индекс иглы (в порядке передачи в
+/// `MultiNeedle::new`/`from_strs`) и стартовая позиция ЛЕВОГО совпадения
+/// (минимальный старт; тай-брейк при равных стартах — меньший индекс иглы).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MultiMatch {
+    pub needle: usize,
+    pub start: usize,
+}
+
+/// Сканер множества фильтр-байтов (объединение редчайших байт всех игл).
+/// `contains` бит-в-бит повторяет семантику AVX2-сканера — включая ложные
+/// срабатывания биткарты внутри пары b/b^8 — поэтому скалярный фолбэк и
+/// SIMD-путь находят одинаковые кандидаты.
+enum ByteScan {
+    Single(u8),
+    CmpEq { bytes: [u8; 8], k: u8 },
+    Bitmap { rows: [u8; 16] },
+}
+
+impl ByteScan {
+    #[inline]
+    fn contains(&self, b: u8) -> bool {
+        match self {
+            ByteScan::Single(n) => b == *n,
+            ByteScan::CmpEq { bytes, k } => bytes[..*k as usize].contains(&b),
+            ByteScan::Bitmap { rows } => rows[(b >> 4) as usize] & (1 << (b & 7)) != 0,
+        }
+    }
+}
+
+fn next_hit_scalar(hay: &[u8], scan: &ByteScan) -> Option<usize> {
+    hay.iter().position(|&b| scan.contains(b))
+}
+
+/// Мульти-игольный поиск: первое (левое) вхождение ЛЮБОЙ из N игл за ОДИН
+/// проход по стогу.
+///
+/// Стратегия (итерация 20, оценка эффекта до реализации: N проходов
+/// `find_substring` против одного — выигрыш растёт линейно с N, уже для
+/// N=2 ожидание >> 15%):
+/// 1. для каждой иглы — её редчайший байт (`pick_filter_byte`, как в
+///    [`find_substring`]); множества байтов объединяются в S;
+/// 2. скан стога идёт по membership в S: |S|<=8 — OR из cmpeq (стиль
+///    memchr2/3, точно), |S|>8 — PSHUFB-биткарта по нибблам (ложные
+///    срабатывания возможны только для пары байт b/b^8 одной строки нибблов
+///    — дешёвые ложные кандидаты, отсекаются верификацией); хиты собираются
+///    пакетами по окну 4КБ — ОДИН вызов ядра на окно, без перестройки
+///    векторов и перезахода в скаляр на каждый хит;
+/// 3. кандидат на позиции p верифицируется по ГРУППЕ игл с фильтр-байтом
+///    haystack[p]: пре-фильтры + memcmp (переиспользуют `pick_prefilter_pair`);
+/// 4. левосторонность обеспечивается продолжением скана: совпадение
+///    фиксируется, но скан идёт дальше, пока будущий кандидат мог бы дать
+///    старт меньше найденного (p+1 <= best + max_fbpos).
+///
+/// Пустая игла совпадает в позиции 0; пустой набор игл даёт `None`.
+/// Для повторных поисков по одному набору игл переиспользуйте `MultiNeedle`
+/// (вся предобработка — в конструкторе).
+pub struct MultiNeedle {
+    needles: Vec<Box<[u8]>>,
+    fb_pos: Vec<u32>,
+    prefilter: Vec<[(u32, u8); 2]>,
+    groups: Vec<Vec<u32>>,
+    byte_to_group: [i16; 256],
+    max_fbpos: usize,
+    empty_idx: Option<usize>,
+}
+
+impl MultiNeedle {
+    pub fn new(needles: &[&[u8]]) -> MultiNeedle {
+        let mut mn = MultiNeedle {
+            needles: Vec::with_capacity(needles.len()),
+            fb_pos: Vec::with_capacity(needles.len()),
+            prefilter: Vec::with_capacity(needles.len()),
+            groups: Vec::new(),
+            byte_to_group: [-1i16; 256],
+            max_fbpos: 0,
+            empty_idx: None,
+        };
+        for (idx, nd) in needles.iter().enumerate() {
+            mn.needles.push((*nd).into());
+            if nd.is_empty() {
+                // индексы параллельных массивов должны сходиться; сама игла
+                // в группы не попадает (find сразу вернёт её индекс)
+                mn.fb_pos.push(0);
+                mn.prefilter.push([(0, 0), (0, 0)]);
+                if mn.empty_idx.is_none() {
+                    mn.empty_idx = Some(idx);
+                }
+                continue;
+            }
+            let fb = pick_filter_byte(nd);
+            let (p1, p2) = if nd.len() >= 2 {
+                pick_prefilter_pair(nd, fb)
+            } else {
+                (0, 0) // len == 1: пре-фильтры вырождаются в всегда-истинные
+            };
+            mn.fb_pos.push(fb as u32);
+            mn.prefilter
+                .push([(p1 as u32, nd[p1]), (p2 as u32, nd[p2])]);
+            let b = nd[fb];
+            let gi = match mn.byte_to_group[b as usize] {
+                g if g >= 0 => g as usize,
+                _ => {
+                    mn.groups.push(Vec::new());
+                    let gi = mn.groups.len() - 1;
+                    mn.byte_to_group[b as usize] = gi as i16;
+                    gi
+                }
+            };
+            mn.groups[gi].push(idx as u32);
+            mn.max_fbpos = mn.max_fbpos.max(fb);
+        }
+        mn
+    }
+
+    /// Обёртка над [`MultiNeedle::new`] для строковых игл.
+    pub fn from_strs(needles: &[&str]) -> MultiNeedle {
+        let bytes: Vec<&[u8]> = needles.iter().map(|s| s.as_bytes()).collect();
+        MultiNeedle::new(&bytes)
+    }
+
+    /// Число игл (включая пустые).
+    pub fn len(&self) -> usize {
+        self.needles.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.needles.is_empty()
+    }
+
+    /// Первое (левое) вхождение любой иглы в `haystack`.
+    pub fn find(&self, haystack: &[u8]) -> Option<MultiMatch> {
+        if self.needles.is_empty() {
+            return None;
+        }
+        if let Some(idx) = self.empty_idx {
+            return Some(MultiMatch {
+                needle: idx,
+                start: 0,
+            });
+        }
+        self.find_impl(haystack)
+    }
+
+    fn build_scan(&self) -> ByteScan {
+        let mut bytes = [0u8; 8];
+        let mut k = 0usize;
+        let mut rows = [0u8; 16];
+        for (b, g) in self.byte_to_group.iter().enumerate() {
+            if *g >= 0 {
+                let b = b as u8;
+                rows[(b >> 4) as usize] |= 1 << (b & 7);
+                if k < 8 {
+                    bytes[k] = b;
+                }
+                k += 1;
+            }
+        }
+        match k {
+            1 => ByteScan::Single(bytes[0]),
+            2..=8 => ByteScan::CmpEq { bytes, k: k as u8 },
+            _ => ByteScan::Bitmap { rows },
+        }
+    }
+
+    /// Верификация кандидата на позиции p (группа игл с фильтр-байтом hay[p]).
+    /// Обновляет `best`; возвращает true, если дальнейший скан не может дать
+    /// старт меньше найденного (левосторонний ранний выход).
+    fn verify_at(&self, hay: &[u8], p: usize, best: &mut Option<(usize, usize)>) -> bool {
+        let g = self.byte_to_group[hay[p] as usize];
+        if g >= 0 {
+            for &ni in &self.groups[g as usize] {
+                let fbp = self.fb_pos[ni as usize] as usize;
+                if fbp > p {
+                    continue; // игла не помещается левее p
+                }
+                let s = p - fbp;
+                let nd: &[u8] = &self.needles[ni as usize];
+                if s + nd.len() > hay.len() {
+                    continue;
+                }
+                let pf = &self.prefilter[ni as usize];
+                if hay[s + pf[0].0 as usize] != pf[0].1 || hay[s + pf[1].0 as usize] != pf[1].1 {
+                    continue;
+                }
+                if hay[s..s + nd.len()] != *nd {
+                    continue;
+                }
+                let better = match *best {
+                    None => true,
+                    Some((bs, bi)) => s < bs || (s == bs && (ni as usize) < bi),
+                };
+                if better {
+                    *best = Some((s, ni as usize));
+                }
+            }
+        }
+        // Левосторонность: будущий хит p' >= p+1 даёт кандидат-старт
+        // p' - fbpos >= p+1 - max_fbpos; если и это хуже найденного —
+        // дальше совпадений с меньшим стартом быть не может.
+        match *best {
+            Some((bs, _)) => p + 1 > bs.saturating_add(self.max_fbpos),
+            None => false,
+        }
+    }
+
+    fn find_impl(&self, hay: &[u8]) -> Option<MultiMatch> {
+        let scan = self.build_scan();
+        #[cfg(target_arch = "x86_64")]
+        {
+            if simd_level() == SIMD_AVX2 {
+                return self.find_impl_avx2(hay, &scan);
+            }
+        }
+        self.find_impl_scalar(hay, &scan)
+    }
+
+    /// Портабельный путь: хит-за-хитом (корректность важнее скорости —
+    /// AVX2-машины идут через find_impl_avx2).
+    fn find_impl_scalar(&self, hay: &[u8], scan: &ByteScan) -> Option<MultiMatch> {
+        let mut best: Option<(usize, usize)> = None;
+        let mut i = 0usize;
+        loop {
+            let hit = match scan {
+                ByteScan::Single(b) => find_byte(&hay[i..], *b),
+                _ => next_hit_scalar(&hay[i..], scan),
+            };
+            let Some(p_rel) = hit else { break };
+            let p = i + p_rel;
+            if self.verify_at(hay, p, &mut best) {
+                break;
+            }
+            i = p + 1;
+        }
+        best.map(|(s, ni)| MultiMatch {
+            needle: ni,
+            start: s,
+        })
+    }
+
+    /// AVX2-путь: ядро собирает хиты ПАКЕТАМИ по окну 4КБ (один вызов на окно
+    /// — векторы множества строятся один раз на окно, короткие промежутки
+    /// между плотными хитами не деградируют в скаляр), верификация — между
+    /// окнами в порядке возрастания позиций. Урок итерации 3 соблюдён:
+    /// холодный блок верификации остаётся ВНЕ горячего цикла ядра.
+    #[cfg(target_arch = "x86_64")]
+    fn find_impl_avx2(&self, hay: &[u8], scan: &ByteScan) -> Option<MultiMatch> {
+        let mut best: Option<(usize, usize)> = None;
+        let mut w = 0usize;
+        let mut buf = [0u16; MULTI_HITS_CAP];
+        while w < hay.len() {
+            let wlen = MULTI_WINDOW.min(hay.len() - w);
+            // Safety: детекция AVX2 выполнена в find_impl.
+            let n = unsafe { multi_scan_window_avx2(&hay[w..], wlen, scan, &mut buf) };
+            for &off in buf[..n].iter() {
+                let p = w + off as usize;
+                if self.verify_at(hay, p, &mut best) {
+                    return best.map(|(s, ni)| MultiMatch {
+                        needle: ni,
+                        start: s,
+                    });
+                }
+            }
+            w = if n == MULTI_HITS_CAP {
+                // буфер полон: продолжаем с последнего обработанного хита
+                w + buf[n - 1] as usize + 1
+            } else {
+                w + MULTI_WINDOW
+            };
+        }
+        best.map(|(s, ni)| MultiMatch {
+            needle: ni,
+            start: s,
+        })
+    }
+}
+
+// Параметры пакетного сбора: окно 4КБ (позиции помещаются в u16), буфер на
+// 512 хитов (реальная плотность хитов редких байт — проценты, запас 5x).
+#[cfg(target_arch = "x86_64")]
+const MULTI_WINDOW: usize = 4096;
+#[cfg(target_arch = "x86_64")]
+const MULTI_HITS_CAP: usize = 512;
+
+#[cfg(target_arch = "x86_64")]
+const BITMAP_KIND: u8 = 9;
+
+#[cfg(target_arch = "x86_64")]
+struct AvxCtx {
+    kind: u8, // 1..=8 = длина CmpEq-цепочки, BITMAP_KIND = биткарта
+    b: [std::arch::x86_64::__m256i; 8],
+    rows: std::arch::x86_64::__m256i,
+    bits: std::arch::x86_64::__m256i,
+}
+
+/// OR-цепочка из $n cmpeq: разворачивается в константный код (тёплый путь
+/// горячего цикла), без bounds-check runtime-срезов.
+macro_rules! avx_or_chain {
+    ($chunk:expr, $ctx:expr, $n:literal) => {{
+        let mut acc = _mm256_cmpeq_epi8($chunk, $ctx.b[0]);
+        let mut j = 1;
+        while j < $n {
+            acc = _mm256_or_si256(acc, _mm256_cmpeq_epi8($chunk, $ctx.b[j]));
+            j += 1;
+        }
+        acc
+    }};
+}
+
+/// Маска «байт принадлежит множеству» для 32-байтного блока.
+/// Вызывать только из AVX2-контекста (под `multi_scan_window_avx2`).
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn avx_mask(
+    chunk: std::arch::x86_64::__m256i,
+    ctx: &AvxCtx,
+    low_nib: std::arch::x86_64::__m256i,
+    zero: std::arch::x86_64::__m256i,
+) -> i32 {
+    use std::arch::x86_64::*;
+    match ctx.kind {
+        BITMAP_KIND => {
+            // Биткарта по нибблам: hi-ниббл выбирает строку (16 строк),
+            // lo-ниббл — бит в ней. Строки-байты покрывают биты lo&7, поэтому
+            // байты b и b^8 коллидируют — ложные кандидаты отсекаются
+            // верификацией (группа такого байта пуста или не матчится).
+            let hi = _mm256_and_si256(_mm256_srli_epi16(chunk, 4), low_nib);
+            let lo = _mm256_and_si256(chunk, low_nib);
+            let t = _mm256_shuffle_epi8(ctx.rows, hi);
+            let u = _mm256_shuffle_epi8(ctx.bits, lo);
+            !_mm256_movemask_epi8(_mm256_cmpeq_epi8(_mm256_and_si256(t, u), zero))
+        }
+        1 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 1)),
+        2 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 2)),
+        3 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 3)),
+        4 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 4)),
+        5 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 5)),
+        6 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 6)),
+        7 => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 7)),
+        _ => _mm256_movemask_epi8(avx_or_chain!(chunk, ctx, 8)),
+    }
+}
+
+/// Пакетный сбор хитов окна [0, wlen) среза `hay`. Срез берётся от начала
+/// окна до конца СТОГА (последнее окно добирает перекрывающимся финальным
+/// блоком, как в find_byte_avx2). Позиции — относительно начала окна
+/// (< wlen <= MULTI_WINDOW, помещаются в u16), по возрастанию; возврат —
+/// число собранных. Если буфер полон — возврат раньше конца окна, вызывающий
+/// продолжит с последнего собранного хита.
+///
+/// # Safety
+/// Вызывать только при поддержке AVX2 (`simd_level() == SIMD_AVX2`).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn multi_scan_window_avx2(
+    hay: &[u8],
+    wlen: usize,
+    scan: &ByteScan,
+    out: &mut [u16; MULTI_HITS_CAP],
+) -> usize {
+    use std::arch::x86_64::*;
+
+    let len = hay.len();
+    let mut count = 0usize;
+
+    if len < 32 || wlen < 32 {
+        // короткий стог/последнее окно < 32Б: скалярный сбор
+        for (j, &b) in hay[..wlen.min(len)].iter().enumerate() {
+            if scan.contains(b) {
+                out[count] = j as u16;
+                count += 1;
+                if count == out.len() {
+                    return count;
+                }
+            }
+        }
+        return count;
+    }
+
+    let ptr = hay.as_ptr();
+    let zero = _mm256_setzero_si256();
+    let low_nib = _mm256_set1_epi8(0x0F);
+
+    // Векторы множества — один раз на ОКНО (4КБ скана), не на каждый хит.
+    let ctx = match *scan {
+        ByteScan::Single(b) => AvxCtx {
+            kind: 1,
+            b: core::array::from_fn(|_| _mm256_set1_epi8(b as i8)),
+            rows: zero,
+            bits: zero,
+        },
+        ByteScan::CmpEq { bytes, k } => AvxCtx {
+            kind: k,
+            b: core::array::from_fn(|j| _mm256_set1_epi8(bytes[j] as i8)),
+            rows: zero,
+            bits: zero,
+        },
+        ByteScan::Bitmap { rows } => {
+            let mut rl = [0u8; 32];
+            rl[..16].copy_from_slice(&rows);
+            rl[16..].copy_from_slice(&rows);
+            let mut bl = [0u8; 32];
+            for (j, slot) in bl.iter_mut().enumerate() {
+                *slot = 1u8 << (j & 7);
+            }
+            AvxCtx {
+                kind: BITMAP_KIND,
+                b: [zero; 8],
+                rows: _mm256_loadu_si256(rl.as_ptr() as *const __m256i),
+                bits: _mm256_loadu_si256(bl.as_ptr() as *const __m256i),
+            }
+        }
+    };
+
+    let mut i = 0usize;
+    // wlen либо кратен 32 (не-последнее окно = 4096), либо равен len
+    // (последнее окно) — 32-байтные блоки никогда не пересекают границу
+    // окна, поэтому проверка pos >= wlen в горячем цикле не нужна.
+    while i + 32 <= wlen {
+        let chunk = _mm256_loadu_si256(ptr.add(i) as *const __m256i);
+        let mut m = avx_mask(chunk, &ctx, low_nib, zero);
+        if m != 0 {
+            loop {
+                let pos = i + m.trailing_zeros() as usize;
+                out[count] = pos as u16;
+                count += 1;
+                if count == out.len() {
+                    return count;
+                }
+                m &= m.wrapping_sub(1);
+                if m == 0 {
+                    break;
+                }
+            }
+        }
+        i += 32;
+    }
+    // Последнее окно стога: добор перекрывающимся финальным блоком. Все
+    // байты [0, i) уже проверены основным циклом; блок [len-32, len)
+    // покрывает остаток — собираем только позиции >= i (дубликатов нет).
+    if wlen == len && i < len && count < out.len() {
+        let chunk = _mm256_loadu_si256(ptr.add(len - 32) as *const __m256i);
+        let mut m = avx_mask(chunk, &ctx, low_nib, zero);
+        while m != 0 {
+            let pos = len - 32 + m.trailing_zeros() as usize;
+            if pos >= i {
+                out[count] = pos as u16;
+                count += 1;
+                if count == out.len() {
+                    break;
+                }
+            }
+            m &= m.wrapping_sub(1);
+        }
+    }
+    count
+}
+
 /// Синтетические документы для бенчмарков и профилирования.
 pub mod sample {
     const PARAGRAPH: &str = "Firefox is a free and open-source web browser built on the Gecko engine. Rust makes hot paths faster: parsing, searching, encoding, layout, storage. Быстрый поиск по большим документам тоже важен. The quick brown animal jumps over the sleepy animal. https://www.some-domain.org/path?query=value&other=123\n";
@@ -477,5 +948,205 @@ mod tests {
             assert_eq!(find_substring_str(&hay, needle), Some(expected));
         }
         assert_eq!(find_substring_str(&hay, "zzz-absent-zzz"), None);
+    }
+
+    // --- мульти-игольный поиск (итерация 20) ---
+
+    /// Эталон: минимум (старт, индекс) по N независимым find_substring —
+    /// тот же контракт левосторонности, что у MultiNeedle::find.
+    fn naive_multi(h: &[u8], pats: &[&[u8]]) -> Option<(usize, usize)> {
+        pats.iter()
+            .enumerate()
+            .filter_map(|(i, p)| find_substring(h, p).map(|s| (s, i)))
+            .min()
+    }
+
+    #[test]
+    fn multi_matches_naive_reference() {
+        // плотные буквы + редкие z/q/x/j: рост множества фильтр-байтов и
+        // частые кандидаты; пустые иглы возникают при plen == 0
+        const POOL: &[u8] = b"aabbczqx";
+        let mut rng = Lcg(0x9E37);
+        for _ in 0..4000 {
+            let n_pat = 1 + rng.below(7) as usize;
+            let pats: Vec<Vec<u8>> = (0..n_pat)
+                .map(|_| {
+                    let plen = rng.below(10) as usize;
+                    (0..plen)
+                        .map(|_| POOL[rng.below(POOL.len() as u64) as usize])
+                        .collect()
+                })
+                .collect();
+            let hlen = rng.below(300) as usize;
+            let hay: Vec<u8> = (0..hlen)
+                .map(|_| POOL[rng.below(POOL.len() as u64) as usize])
+                .collect();
+            let refs: Vec<&[u8]> = pats.iter().map(|p| p.as_slice()).collect();
+            let got = MultiNeedle::new(&refs)
+                .find(&hay)
+                .map(|m| (m.start, m.needle));
+            let want = naive_multi(&hay, &refs);
+            assert_eq!(
+                got,
+                want,
+                "hay={:?} pats={:?}",
+                String::from_utf8_lossy(&hay),
+                refs.iter()
+                    .map(|p| String::from_utf8_lossy(p).into_owned())
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn multi_known_cases() {
+        // ловушка левосторонности: первый хит скана ('z' @ 2) даёт иглу 1,
+        // но левое совпадение — игла 0 (старт 0)
+        let mn = MultiNeedle::new(&[b"bbz", b"z"]);
+        assert_eq!(
+            mn.find(b"bbz"),
+            Some(MultiMatch {
+                needle: 0,
+                start: 0
+            })
+        );
+
+        // префиксные иглы: минимальный старт, затем минимальный индекс
+        let mn = MultiNeedle::new(&[b"abc", b"abcdef"]);
+        assert_eq!(
+            mn.find(b"abcdef"),
+            Some(MultiMatch {
+                needle: 0,
+                start: 0
+            })
+        );
+        let mn = MultiNeedle::new(&[b"abcdef", b"abc"]);
+        assert_eq!(
+            mn.find(b"abcdef"),
+            Some(MultiMatch {
+                needle: 0,
+                start: 0
+            })
+        );
+
+        // пустая игла совпадает в нуле
+        let mn = MultiNeedle::new(&[b"x", b""]);
+        assert_eq!(
+            mn.find(b"xxx"),
+            Some(MultiMatch {
+                needle: 1,
+                start: 0
+            })
+        );
+
+        // дубликаты — первый индекс
+        let mn = MultiNeedle::new(&[b"dup", b"dup"]);
+        assert_eq!(
+            mn.find(b"xxdupxx"),
+            Some(MultiMatch {
+                needle: 0,
+                start: 2
+            })
+        );
+
+        // игла длиннее стога / игла == стог / пустой стог
+        let mn = MultiNeedle::new(&[b"abcd"]);
+        assert_eq!(mn.find(b"abc"), None);
+        let mn = MultiNeedle::new(&[b"abc"]);
+        assert_eq!(
+            mn.find(b"abc"),
+            Some(MultiMatch {
+                needle: 0,
+                start: 0
+            })
+        );
+        let mn = MultiNeedle::new(&[b"a", b"b"]);
+        assert_eq!(mn.find(b""), None);
+
+        // пустой набор
+        let mn = MultiNeedle::new(&[]);
+        assert_eq!(mn.find(b"abc"), None);
+        assert!(mn.is_empty());
+        assert_eq!(mn.len(), 0);
+
+        // |S| == 1 (общий фильтр-байт, группа из двух игл)
+        let mn = MultiNeedle::new(&[b"zz1", b"zz2"]);
+        assert_eq!(
+            mn.find(b"abzz2cd"),
+            Some(MultiMatch {
+                needle: 1,
+                start: 2
+            })
+        );
+    }
+
+    #[test]
+    fn multi_set_paths_coverage() {
+        // покрытие всех веток сканера: Single / CmpEq(2..=8) / Bitmap(>8)
+        let sets: [&[&[u8]]; 5] = [
+            &[b"zzza", b"zzzb"], // |S| = 1: общий 'z' (правей 'a'/'b' по рангу)
+            &[b"zzza", b"qqqb"], // |S| = 2
+            &[b"zzza", b"qqqb", b"xxxc", b"jjjd"], // |S| = 4
+            &[
+                b"zzza", b"qqqb", b"xxxc", b"jjjd", b"vvve", b"kkkf", b"wwwg",
+            ], // |S| = 7 -> CmpEq-7
+            &[
+                // 10 разных редких байт -> Bitmap (с коллизиями b/b^8:
+                // Z~R, K~C, V~N встречаются в noise — проверка отсечения)
+                b"za", b"ja", b"qa", b"xa", b"va", b"ka", b"wa", b"Za", b"Ja", b"Qa",
+            ],
+        ];
+        for pats in sets {
+            let mut hay = Vec::new();
+            for _ in 0..3 {
+                hay.extend_from_slice(b"noise-noise ");
+                for p in pats.iter() {
+                    hay.extend_from_slice(p);
+                    hay.push(b' ');
+                }
+            }
+            let refs: Vec<&[u8]> = pats.to_vec();
+            let got = MultiNeedle::new(&refs)
+                .find(&hay)
+                .map(|m| (m.start, m.needle));
+            assert_eq!(got, naive_multi(&hay, &refs), "pats={pats:?}");
+        }
+    }
+
+    #[test]
+    fn multi_bench_sets_match_naive() {
+        // наборы из benches/multi.rs: все иглы сидят в хвосте документа
+        let hay = sample::haystack_n(100);
+        let sets: [&[&str]; 3] = [
+            &["Mozilla Corporation", "горячие пути"],
+            &[
+                "Mozilla Corporation",
+                "горячие пути",
+                "https://example.com/search?q=firefox+rust&lang=ru",
+                "example.com/search",
+            ],
+            &[
+                "Mozilla Corporation",
+                "горячие пути",
+                "https://example.com/search?q=firefox+rust&lang=ru",
+                "example.com/search",
+                "firefox+rust&lang",
+                "q=firefox",
+                "lang=ru",
+                "Corporation",
+            ],
+        ];
+        for set in sets {
+            let refs: Vec<&[u8]> = set.iter().map(|s| s.as_bytes()).collect();
+            let got = MultiNeedle::new(&refs)
+                .find(hay.as_bytes())
+                .map(|m| (m.start, m.needle));
+            assert_eq!(got, naive_multi(hay.as_bytes(), &refs), "set={set:?}");
+            let (s, _) = got.expect("все иглы набора присутствуют в хвосте");
+            assert!(
+                s > hay.len() - 300,
+                "левое совпадение должно сидеть в хвосте документа"
+            );
+        }
     }
 }

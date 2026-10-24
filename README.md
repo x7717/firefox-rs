@@ -4,7 +4,7 @@
 Каждое изменение доказывается числами: benchmark до/после + профилирование.
 Оптимизируем то, что профиль показывает самым тяжёлым.
 
-## Текущие результаты (итерация 14: foxjson v0.8 — токен-трединг контейнеров, fused token fetch)
+## Текущие результаты (итерация 20: foxsearch v0.2 — мульти-игольный поиск, один проход против N)
 
 | Крейт | Бенчмарк | Эталон | Итог |
 |---|---|---|---|
@@ -15,6 +15,9 @@
 | foxjson | parse/small | serde_json | **5.6x быстрее** |
 | foxsearch | find/"Mozilla Corporation" | std::str::find | **1.9x быстрее** |
 | foxsearch | find/"zzz-absent-zzz" | std::str::find | **2.7x быстрее** |
+| foxsearch | multi-2 (2 иглы за проход) | 2× find_substring | **1.5–2.0x быстрее** |
+| foxsearch | multi-4 (4 иглы за проход) | 4× find_substring | **2.7–3.0x быстрее** |
+| foxsearch | multi-8 (8 игл за проход) | 8× find_substring | **3.4–3.8x быстрее** (6.8x от 8× std::str::find) |
 | foxurl | parse/corpus-all (14 URL) | url | **4.8x быстрее** (0.85 µs vs ~4.0 µs same-run) |
 | foxurl | canonical/corpus-all (parse+as_str, 14 URL) | url | **4.1x быстрее** (0.98 µs vs ~4.0 µs; было 2.0x) |
 | foxurl | serialize/dirty-all (as_str, 7 грязных URL) | — | **-15%** за итерацию 11 (css-URL 156 -> 4 ns = -97.4%) |
@@ -65,7 +68,9 @@ perf record -g -- target/release/examples/hotspot
 crates/
   foxjson/     ТАП-парсер JSON (плоская лента узлов, ~15 аллокаций на документ):
                session store, prefs, telemetry (эталон: serde_json)
-  foxsearch/   SIMD-поиск (AVX2-ядро 32 байт/итерацию + rarity-фильтры):
+  foxsearch/   SIMD-поиск (AVX2-ядро 32 байт/итерацию + rarity-фильтры;
+               MultiNeedle v0.2: N игл за ОДИН проход — пакетный сбор хитов
+               окнами 4КБ, cmpeq-OR до |S|=8, PSHUFB-биткарта сверх):
                URL classifier, text ops (эталон: std::str::find)
   foxurl/      WHATWG URL-парсер (zero-copy смещения + отложенная нормализация):
                session store, history (эталон: url)
