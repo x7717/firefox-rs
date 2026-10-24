@@ -31,6 +31,14 @@
 //! длине (было до 5 вызовов eq_ignore_ascii_case на сегмент); fast-path
 //! write_encoded — предикат false на всём срезе => одна memcpy.
 //!
+//! Итерация 12 (v0.5): ТАБЛИЧНЫЙ СКАН ДОМЕНА — один проход scan_host_domain
+//! по спану хоста вместо ТРЁХ (SWAR find ':' + memchr '%' + побайтовая
+//! валидация): конец хоста/порт, верхний регистр, '%' и запрещённые/
+//! не-ASCII байты — из HOST_DOMAIN_TBL; parse_domain — только редкие пути
+//! (decode, ошибки) через DomainOutcome. Скан терминаторов authority тоже
+//! табличный (AUTH_TERM_*). parse/corpus-all -14%, canonical -13.8%
+//! (отрыв от url 2.83x -> 3.16x), CPU на профиле -14%.
+//!
 //! Ограничения v0.1 (документированы): не-ASCII хосты (IDNA/punycode) и
 //! file-специфика Windows (буквы дисков) не поддерживаются — `Err`.
 
@@ -410,10 +418,16 @@ impl<'a> Url<'a> {
         let bytes = self.raw.as_bytes();
         let len = bytes.len();
         let special = self.kind.is_special();
+        // v0.5: скан терминатора по константной таблице (одна загрузка
+        // вместо цепочки сравнений matches! на каждый байт)
+        let term: &[u8; 256] = if special {
+            &AUTH_TERM_SPECIAL
+        } else {
+            &AUTH_TERM_GENERIC
+        };
         let mut i = start;
         while i < len {
-            let c = bytes[i];
-            if matches!(c, b'/' | b'?' | b'#') || (special && c == b'\\') {
+            if term[bytes[i] as usize] != 0 {
                 break;
             }
             i += 1;
@@ -499,13 +513,16 @@ impl<'a> Url<'a> {
                 port_span = (host_end + 1, end);
             }
         } else {
-            // --- домен или IPv4 (memchr вместо побайтового position)
-            if let Some(colon) = find_byte(b':', &bytes[from..end]) {
-                host_end = from + colon;
+            // --- домен или IPv4: ОДИН табличный проход по спану хоста
+            // (v0.5: было ТРИ прохода — SWAR find ':' + memchr '%' +
+            // побайтовая валидация в parse_domain)
+            let scan = scan_host_domain(bytes, from, end);
+            if scan.has_port {
+                host_end = scan.host_end;
                 has_port = true;
                 port_span = (host_end + 1, end);
             }
-            self.parse_domain(from, host_end)?;
+            self.parse_domain(from, host_end, scan)?;
         }
 
         // --- порт
@@ -547,61 +564,66 @@ impl<'a> Url<'a> {
 
     /// Домен: percent-decode при наличии '%', запрет символов,
     /// детекция IPv4 (ends-in-a-number), флаг нижнего регистра.
-    fn parse_domain(&mut self, from: usize, end: usize) -> Result<(), Error> {
-        let raw_bytes = self.raw.as_bytes();
-        let span = &raw_bytes[from..end];
-
-        // percent-decode (редкий путь)
-        let decoded: Vec<u8>;
-        let host_bytes: &[u8] = if span.contains(&b'%') {
-            decoded = percent_decode(span).ok_or(Error {
+    /// v0.5: валидация/верхний регистр/'%' предвычислены табличным
+    /// проходом scan_host_domain — здесь только редкие пути (decode,
+    /// ошибки) и решение о IPv4/owned.
+    fn parse_domain(&mut self, from: usize, end: usize, scan: HostScan) -> Result<(), Error> {
+        // РЕДКИЙ путь: percent-decode + полная валидация декодированных
+        // (сырые запрещённые байты попадают в декодированные дословно,
+        // но %XX может легализовать верхний регистр — решает декод;
+        // поэтому сырой scan.bad при наличии '%' игнорируется).
+        // Быстрый путь: без '%' — ошибка по первому bad из скана.
+        let outcome = if scan.pct.is_some() {
+            let span = &self.raw.as_bytes()[from..end];
+            let decoded = percent_decode(span).ok_or(Error {
                 position: from,
                 kind: ErrorKind::InvalidDomainCharacter,
             })?;
-            &decoded
+            let mut has_upper = false;
+            for &c in &decoded {
+                if c >= 0x80 {
+                    return Err(Error {
+                        position: from,
+                        kind: ErrorKind::IdnaError,
+                    });
+                }
+                if is_forbidden_host_byte(c) {
+                    return Err(Error {
+                        position: from,
+                        kind: ErrorKind::InvalidDomainCharacter,
+                    });
+                }
+                has_upper |= c.is_ascii_uppercase();
+            }
+            finish_domain(from, &decoded, span, has_upper)?
         } else {
-            span
+            if let Some((_, nonascii)) = scan.bad {
+                // первый запрещённый/не-ASCII байт спана (порядок
+                // совпадает с прежним циклом валидации)
+                return Err(Error {
+                    position: from,
+                    kind: if nonascii {
+                        ErrorKind::IdnaError
+                    } else {
+                        ErrorKind::InvalidDomainCharacter
+                    },
+                });
+            }
+            let span = &self.raw.as_bytes()[from..end];
+            finish_domain(from, span, span, scan.has_upper)?
         };
-
-        // ОДИН проход вместо трёх (было: цикл запретов + отдельный
-        // .any(is_ascii_uppercase) + contains('%')): не-ASCII и запрещённые
-        // байты — ранний выход, верхний регистр — накопление флага.
-        let mut has_upper = false;
-        for &c in host_bytes {
-            if c >= 0x80 {
-                return Err(Error {
-                    position: from,
-                    kind: ErrorKind::IdnaError,
-                });
+        match outcome {
+            DomainOutcome::Ipv4(Some(dotted)) => self.host_owned = Some(dotted),
+            DomainOutcome::Ipv4(None) => {}
+            DomainOutcome::Borrowed(upper) => {
+                if upper {
+                    self.flags |= F_HOST_LOWER;
+                }
             }
-            if is_forbidden_host_byte(c) {
-                return Err(Error {
-                    position: from,
-                    kind: ErrorKind::InvalidDomainCharacter,
-                });
+            DomainOutcome::Owned(s) => {
+                self.host_owned = Some(s);
+                self.flags &= !F_HOST_LOWER;
             }
-            has_upper |= c.is_ascii_uppercase();
-        }
-
-        // ends-in-a-number -> IPv4-парсер
-        if ends_in_a_number(host_bytes) {
-            let dotted = ipv4_serialize(host_bytes).ok_or(Error {
-                position: from,
-                kind: ErrorKind::InvalidIpv4Address,
-            })?;
-            if host_bytes != dotted.as_bytes() {
-                self.host_owned = Some(dotted);
-            }
-            return Ok(());
-        }
-
-        if has_upper {
-            self.flags |= F_HOST_LOWER;
-        }
-        if host_bytes != span {
-            // был percent-decode — результат отличен от raw
-            self.host_owned = Some(String::from_utf8_lossy(host_bytes).to_ascii_lowercase());
-            self.flags &= !F_HOST_LOWER;
         }
         Ok(())
     }
@@ -950,6 +972,161 @@ static PATH_TBL_GENERIC: [u8; 256] = build_path_table(false);
 static QUERY_TBL_SPECIAL: [u8; 256] = build_query_table(true);
 static QUERY_TBL_GENERIC: [u8; 256] = build_query_table(false);
 
+// ---------------------------------------------------------------------------
+// Табличный скан домена (v0.5): один проход вместо трёх
+// ---------------------------------------------------------------------------
+
+// Биты таблицы домена (локальные, в self.flags не OR-ятся).
+const T_COLON: u8 = 1 << 4; // ':' — конец хоста, начало порта
+const F_H_UPPER: u8 = 1 << 0; // верхний регистр (F_HOST_LOWER)
+const F_H_PCT: u8 = 1 << 1; // '%' — нужен percent-decode
+const F_H_NONASCII: u8 = 1 << 2; // >= 0x80 — IdnaError
+const F_H_FORBIDDEN: u8 = 1 << 3; // forbidden host code point
+
+const fn build_host_domain_table() -> [u8; 256] {
+    let mut t = [0u8; 256];
+    let mut c = 0usize;
+    while c < 256 {
+        let b = c as u8;
+        let mut v = 0u8;
+        if b == b':' {
+            v |= T_COLON;
+        }
+        if b.is_ascii_uppercase() {
+            v |= F_H_UPPER;
+        }
+        if b == b'%' {
+            // '%' — не ошибка, а маркер декодирования (в списке forbidden,
+            // но решение принимает percent-decode)
+            v |= F_H_PCT;
+        } else {
+            if b >= 0x80 {
+                v |= F_H_NONASCII;
+            }
+            if is_forbidden_host_byte(b) {
+                v |= F_H_FORBIDDEN;
+            }
+        }
+        t[c] = v;
+        c += 1;
+    }
+    t
+}
+
+static HOST_DOMAIN_TBL: [u8; 256] = build_host_domain_table();
+
+/// Таблица терминаторов authority: '/', '?', '#' и '\\' у спец-схем.
+/// Байт-класс один — «конец authority» (проверка != 0 в цикле скана).
+const fn build_auth_term_table(special: bool) -> [u8; 256] {
+    let mut t = [0u8; 256];
+    t[b'/' as usize] = 1;
+    t[b'?' as usize] = 1;
+    t[b'#' as usize] = 1;
+    if special {
+        t[b'\\' as usize] = 1;
+    }
+    t
+}
+
+static AUTH_TERM_SPECIAL: [u8; 256] = build_auth_term_table(true);
+static AUTH_TERM_GENERIC: [u8; 256] = build_auth_term_table(false);
+
+/// Результат табличного прохода по спану домена.
+struct HostScan {
+    host_end: usize,
+    has_port: bool,
+    has_upper: bool,
+    /// первая '%' — нужен percent-decode (редкий путь)
+    pct: Option<usize>,
+    /// первый запрещённый/не-ASCII байт: (позиция, не-ASCII?) —
+    /// НЕИЗБЕЖНАЯ ошибка: такие байты попадают в декодированный хост
+    /// дословно, но вид ошибки решает декод при наличии '%'
+    bad: Option<(usize, bool)>,
+}
+
+/// Применённый исход домена (без заимствования self — parse_domain
+/// мутит поля по результату).
+enum DomainOutcome {
+    /// IPv4-хост: Some — сериализация (отлична от входа), None — вход
+    /// уже каноничен
+    Ipv4(Option<String>),
+    /// хост остаётся заимствованным; bool — взвести F_HOST_LOWER
+    Borrowed(bool),
+    /// owned-хост из percent-decode (уже в нижнем регистре; флаг
+    /// F_HOST_LOWER сбрасывается — он уже каноничен)
+    Owned(String),
+}
+
+/// Общий хвост домена (свободная функция): ends-in-a-number -> IPv4,
+/// флаг нижнего регистра, owned при percent-decode.
+fn finish_domain(
+    from: usize,
+    host_bytes: &[u8],
+    raw_span: &[u8],
+    has_upper: bool,
+) -> Result<DomainOutcome, Error> {
+    // ends-in-a-number -> IPv4-парсер
+    if ends_in_a_number(host_bytes) {
+        let dotted = ipv4_serialize(host_bytes).ok_or(Error {
+            position: from,
+            kind: ErrorKind::InvalidIpv4Address,
+        })?;
+        return Ok(DomainOutcome::Ipv4(
+            (host_bytes != dotted.as_bytes()).then_some(dotted),
+        ));
+    }
+    if host_bytes != raw_span {
+        // был percent-decode — результат отличен от raw
+        return Ok(DomainOutcome::Owned(
+            String::from_utf8_lossy(host_bytes).to_ascii_lowercase(),
+        ));
+    }
+    Ok(DomainOutcome::Borrowed(has_upper))
+}
+
+/// Один проход по [from..end): конец хоста (':'), верхний регистр,
+/// '%' и запрещённые/не-ASCII байты. Заменяет три прохода (SWAR find
+/// ':' + memchr '%' + побайтовая валидация). Порядок bad — как в
+/// прежнем цикле валидации (первый плохой байт определяет ошибку).
+#[inline]
+fn scan_host_domain(bytes: &[u8], from: usize, end: usize) -> HostScan {
+    let mut s = HostScan {
+        host_end: end,
+        has_port: false,
+        has_upper: false,
+        pct: None,
+        bad: None,
+    };
+    let mut i = from;
+    while i < end {
+        let t = HOST_DOMAIN_TBL[bytes[i] as usize];
+        if t == 0 {
+            i += 1;
+            continue;
+        }
+        if t & T_COLON != 0 {
+            // байты после ':' — порт (валидация цифр отдельно)
+            s.host_end = i;
+            s.has_port = true;
+            return s;
+        }
+        if t & F_H_UPPER != 0 {
+            s.has_upper = true;
+            i += 1;
+            continue;
+        }
+        if t & F_H_PCT != 0 {
+            if s.pct.is_none() {
+                s.pct = Some(i);
+            }
+        } else if s.bad.is_none() {
+            s.bad = Some((i, t & F_H_NONASCII != 0));
+        }
+        i += 1;
+    }
+    s
+}
+
 #[inline]
 fn userinfo_needs_enc(c: u8) -> bool {
     path_needs_enc(c)
@@ -960,8 +1137,9 @@ fn userinfo_needs_enc(c: u8) -> bool {
 }
 
 /// Запрещённые байты домена (forbidden host code points).
+/// const fn — используется при построении HOST_DOMAIN_TBL.
 #[inline]
-fn is_forbidden_host_byte(c: u8) -> bool {
+const fn is_forbidden_host_byte(c: u8) -> bool {
     matches!(
         c,
         0x00 | b'\t'
