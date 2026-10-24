@@ -29,6 +29,53 @@ jobs:
           # получают --output-format bencher и падают (Unrecognized option)
           cargo bench --workspace --benches -- --output-format bencher | tee bench-output.txt
 
+      # Итерация 26: на свежем раннере (промах rust-cache по target/criterion)
+      # criterion 0.5.1 в bencher-режиме пытается сравниться с baseline "base"
+      # и рвёт строку результата надвое:
+      #   "test NAME ... Criterion.rs ERROR: ... base/sample.json ..."  <- имя
+      #   "bench:  X ns/iter (+/- Y)"                                   <- число
+      # Парсер github-action-benchmark (tool: cargo) ждёт
+      #   "test NAME ... bench: X ns/iter (+/- Y)" одной строкой,
+      # находит 0 результатов и ПАДАЕТ ("No benchmark result was found");
+      # continue-on-error ниже скрывал аварию — история gh-pages молча
+      # не писалась. Склеиваем и проверяем формат жёстко.
+      - name: Normalize criterion output (rejoin split bencher lines)
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PYEOF'
+          import re, sys
+          try:
+              src = open('bench-output.txt', encoding='utf-8').read().splitlines()
+          except FileNotFoundError:
+              print("no bench-output.txt (bench step failed earlier)"); sys.exit(0)
+          err_re = re.compile(r'^(test .*? \.\.\.) Criterion\.rs ERROR:')
+          out, i, joined = [], 0, 0
+          while i < len(src):
+              m = err_re.match(src[i])
+              if m and i + 1 < len(src) and re.match(r'^\s*bench:', src[i + 1]):
+                  out.append(f"{m.group(1)} {src[i + 1].strip()}")
+                  joined += 1; i += 2
+              else:
+                  out.append(src[i]); i += 1
+          open('bench-output.txt', 'w', encoding='utf-8').write('\n'.join(out) + '\n')
+          print(f"joined {joined} split criterion lines")
+          PYEOF
+
+      - name: Verify parser-compatible output (guard against silent history loss)
+        shell: bash
+        run: |
+          python3 - <<'PYEOF'
+          import re, sys
+          src = open('bench-output.txt', encoding='utf-8').read()
+          n = len(re.findall(
+              r'^test .*? \.\.\. bench:\s+-?\d+(?:\.\d+)? ns/iter \(\+/- -?\d+(?:\.\d+)?\)',
+              src, re.M))
+          print(f"parser-compatible bench lines: {n}")
+          if n == 0:
+              sys.exit("FAIL: 0 parser-compatible lines — github-action-benchmark would log 'No benchmark result was found'")
+          PYEOF
+
       - name: Benchmark summary
         if: always()
         shell: bash
@@ -40,7 +87,9 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # История производительности в ветке gh-pages + алерт при регрессе >150%
+      # История производительности в ветке gh-pages + алерт при регрессе >150%.
+      # continue-on-error оставлен (сбой push в gh-pages не должен красить
+      # бенч-джобу), но шаг Verify выше теперь ловит потерю формата громко.
       - name: Store benchmark history
         if: github.ref == 'refs/heads/main'
         uses: benchmark-action/github-action-benchmark@v1
