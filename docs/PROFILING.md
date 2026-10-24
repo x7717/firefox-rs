@@ -118,3 +118,44 @@ rustflags = ["-C", "codegen-units=1", "-C", "llvm-args=-align-all-functions=6"]
 сжимаемо», если выжившие хиты — реальные совпадения, а ложные уже убиты
 LUT до нуля. Фикстуры в python-реплике дублируются НАРОЧНО (инструмент не
 зависит от cargo) — при изменении RARITY/стримов синхронизировать вручную.
+
+## Свежие SIGPROF-бейзлайны под config B (итерация 26, 2026-10-25)
+
+Съём после отката батч-пути (36db40c): сборка prof_* с флагами не-PIE
+через `cargo rustc ... --` (добавки к флагам, config B из .cargo/config.toml
+НЕ перекрыт — в отличие от env RUSTFLAGS).
+
+Команды:
+```bash
+cargo rustc --release --example prof_json -p foxjson -- \
+    -C relocation-model=static -C link-arg=-no-pie
+FOX_PROF_DOC=session FOX_PROF_TABS=5000 FOX_PROF_ITERS=3000 \
+    target/release/examples/prof_json
+python3 tools/symbolize.py target/release/examples/prof_json /tmp/foxjson_session.prof --top 18
+```
+
+Результаты (сэмплов: session 3484, nums 1859, strs 1085, foxurl 648):
+
+| workload | лидеры (own-time) |
+|---|---|
+| foxjson session-5000 | parse_value_tok 46.2%, parse_string 30.7%, parse_string_slow 13.3%, first_stop_avx2 6.5%, _fini(libc) 2.9% |
+| foxjson nums-5000 | parse_value_tok 77.2% (чистые числа), parse_string 22.8% (ключи) |
+| foxjson strs-5000 | parse_value_tok 34.2%, parse_string_slow 29.6%, parse_string 23.3%, first_stop_avx2 9.3% |
+| foxurl corpus-20000 | parse_authority_and_path 31.5%, parse_raw 16.7%, as_str 12.2%, main(харнесс) 10.3%, _fini(libc) 7.3%, parse_query 6.2% |
+
+Выводы (предоценка, правило >>15%):
+
+- лидеры совпадают с ЗАКРЫТЫМИ зонами (foxjson строки/числа, foxurl
+  authority/IPv6, canonical-сериализация) — изменения профиля нет, зоны
+  остаются закрытыми;
+- parse_raw 16.67% — внутри исторического коридора 13.6-15.6% (648 сэмплов,
+  CI95 ±3%): НЕ изменение профиля; содержимое уже табличный однопроходник
+  (v0.6 SCHEME_TBL, v0.7 dirty-restart) — нового рычага нет;
+- as_str 12.2% — цена ленивой канонизации (= canonical-бенч, история -51%),
+  не новый рычаг;
+- _fini (libc malloc/memcpy) 2.9-7.3% — микрозона, аллокатор не трогаем
+  (zero-dep политика крейтов);
+- first_stop_avx2 6.5-9.3% — микрозона (<15%), не трогать.
+
+Итог итерации 26: новых зон >>15% вне закрытого списка НЕТ. Профили
+зафиксированы как бейзлайн для следующих сессий.
