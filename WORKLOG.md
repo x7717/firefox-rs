@@ -605,3 +605,93 @@ fmt --check + clippy -D warnings — зелёные.
    percent-decode хоста без аллокации;
 2. foxjson: probe-эксперименты машинерии контейнеров (порог >= 3%);
 3. foxsearch: переоценка 64Б/AVX-512 на серверном CPU (ветка готова).
+
+## 2026-10-24, Сессия 9 — итерация 10: foxurl v0.3 — табличный скан пути/запроса, SWAR, слитые проходы (профиль -> устранение ветвлений и ложных флагов)
+
+### Probe-декомпозиция parse_authority_and_path (37.4% профиля, 1158 сэмплов)
+
+Как parse_value в foxjson (итерация 6): временные #[inline(never)]-пробы.
+Распад бакета: parse_path_query_fragment 21.3%, parse_host_and_port 16.1%,
+userinfo 3.4% (+0.5% closure any), auth-скан 2.2%. Вне бакета:
+write_encoded<path> 9.2% + write_path_normalized 7.7% (dot-URL),
+probe_dirty_ws 6.2% (полный скан \t\n\r каждого входа!), _fini 8.8%.
+
+### Семь изменений (v0.3)
+
+1. **Таблицы классификации байтов** (вместо ветвистых match): константные
+   256-байтные PATH_TBL_SPECIAL/GENERIC и QUERY_TBL_SPECIAL/GENERIC
+   (const fn build_*_table, младшие биты — сами F_PATH_NORM/F_PATH_ENC/
+   F_QUERY_ENC, старшие — управление '?'/'#'). Скан пути/запроса — одна
+   загрузка + тест на ноль; таблицы для query различают спец/не-спец
+   ('\'' кодируется только у спец-схем). parse_opaque_path тоже табличный,
+   маскированный до F_PATH_ENC (иначе mailto терял бы zero-copy).
+2. **SWAR-скан \t\n\r фазы 0** (has_dirty_ws): 8 байт/итерацию, XOR с
+   replicated-иглами + детекция нулевого байта. Было: побайтовый .any()
+   на КАЖДОМ входе — 6.2%.
+3. **Слитый parse_userinfo**: memrchr('@') + один проход по userinfo-
+   спану (структурный ':' = первый ':'; ':' в пароле и кодируемые байты —
+   enc). УСТРАНЁН БАГ-ПЕРЕАППРОКСИМАЦИЯ: прежний chain(&bytes[at+1..
+   auth_end]) сканировал РЕГИОН ХОСТА — ложный F_USERINFO_ENC от порта
+   ':' и структурного ':' вынуждал owned-пересборку as_str на ВСЕХ
+   userinfo-URL. Теперь чистые userinfo — zero-copy (бенч #5 -26.6%).
+4. **Слитый parse_domain**: не-ASCII/запрещённые/uppercase — один проход
+   с ранним выходом (было: contains('%') + цикл запретов + .any(upper)).
+5. **write_encoded — байтовая запись** (as_mut_vec + reserve): байты с
+   needs(c)==false всегда в 0x20..=0x7E (все предикаты кодируют не-ASCII
+   и C0 в %XX) — UTF-8-механика push(c as char) была лишней. SAFETY-
+   инвариант задокументирован. Плюс прямая байтовая запись lowercased
+   scheme/host в as_str (to_ascii_lowercase() аллоцировал на каждый
+   Upper-URL).
+6. **find_byte/rfind_byte** (свой SWAR-memchr — core::slice::memchr
+   нестабилен): хост-скан ':', IPv6 ']', userinfo '@'.
+7. **Стек сегментов без Vec** в write_path_normalized: [usize; 16] на
+   стеке + spill в Vec (LIFO) для путей глубже.
+
+### Уроки итерации (регресс-история)
+
+- **Первая попытка**: бенч #8 (длинный percent-запрос) +11%. Причина —
+  `self.flags |= t` на КАЖДЫЙ байт в parse_query (t==0 включительно) —
+  RMW self.flags через память вместо регистрового аккумулятора. Фикс:
+  acc-переменная, одна запись. #8: +11% -> -31.0%. Метод: probe8-проект
+  (точечный SIGPROF-профиль одного URL) + stash-A/B — CPU-профиль нового
+  кода был ЛУЧШЕ (-23%), что отсекло гипотезы о сканах и указало на
+  мерцание между criterion-прогонами.
+- **Спил-баг стека сегментов**: spill[depth-CAP] после перемешанных
+  pop/push указывал на мёртвую ячейку (потеря сегментов на путях
+  глубже CAP). Поймано тестом deep_path_segment_stack_spill при CAP=8
+  (при CAP=24 перемешивание не достигалось — тест случайно проходил).
+  Фикс: spill.pop() — чистое LIFO-расширение.
+- Тест-ожидания дважды ошибочны, эталон прав: url.username() возвращает
+  канонический percent-кодированный вид ("a%40b") — наш username()
+  возвращает сырой спан (расхождение ЗАДОКУМЕНТИРОВАНО в доках методов,
+  канонический вид даёт as_str — паритетен); пустой путь спец-схемы
+  нормализуется в "/" (special_empty_path — не zero-copy кейс).
+
+### Числа (criterion, release, A/B против save-baseline v021-before; url same-run)
+
+| Бенч | v0.2.1 | v0.3 | Δ | vs url same-run |
+|---|---|---|---|---|
+| corpus-all (14 URL) | 2.056 µs | **1.436 µs** | **-30.2%** | 2.03x -> **2.78x** |
+| #0..#13 (все 14) | — | — | **-16..-39%** | разброс **2.3-4.5x** |
+| #8 (percent-запрос) | 168.2 ns | 116.7 ns | -31.0% | 2.5x |
+| #5 (userinfo) | 122.7 ns | 89.6 ns | -26.6% | 3.1x |
+| #6 (IPv6+порт) | 73.1 ns | 60.7 ns | -15.8% | 2.7x |
+
+Регрессов нет (после фикса RMW). Профиль ПОСЛЕ: 806 сэмплов против 1158
+на ту же работу (-30% CPU); _fini 8.2% -> 6.1%, parse 8.2% -> 4.2%.
+От v0.1: corpus-all 2.654 -> 1.436 µs (-45.9%), отрыв от url 1.53x -> 2.78x.
+
+Тесты: foxurl 22 -> 30 (+8: clean_userinfo_is_zero_copy,
+userinfo_encoding_parity_with_url, userinfo_last_at_sign,
+opaque_path_with_dots_stays_borrowed, deep_path_segment_stack_spill,
+swar_find_byte_matches_position, classification_tables_match_predicates,
+swar_dirty_ws_matches_scalar), workspace 50/50, fmt --check +
+clippy -D warnings — зелёные.
+
+### Следующий шаг (итерация 11)
+
+1. foxurl: write_path_normalized/write_encoded — новый #1 (~25% профиля,
+   только dot-URL/percent-пути): сравнение сегментов без
+   eq_ignore_ascii_case-веток, SIMD-нормализация;
+2. foxjson: probe-эксперименты машинерии контейнеров (порог >= 3%);
+3. foxsearch: переоценка 64Б/AVX-512 на серверном CPU (ветка готова).
