@@ -87,6 +87,42 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Итерация 27: 5 прогонов ИДЕНТИЧНОГО кода на разных раннерах дали
+      # разброс 49-76% (три класса скорости, см. docs/PROFILING.md). Алерт
+      # 150% слеп к классу: переворот fast->classic = +85% выглядит нормой,
+      # реальный регресс +20% невидим. Каждый лог бенча теперь несёт класс
+      # раннера (канареечный бенч parse/foxjson/session-5000) — сравнивать
+      # можно только прогоны ОДНОГО класса; первичный сигнал регресса —
+      # внутри-прогонные отношения fox/std.
+      - name: Runner class canary
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PYEOF'
+          import re
+          try:
+              src = open('bench-output.txt', encoding='utf-8').read()
+          except FileNotFoundError:
+              print("runner class: UNKNOWN (no bench-output.txt)"); raise SystemExit
+          def val(name):
+              m = re.search(rf'^test {re.escape(name)} \.\.\. bench:\s+(\d+) ns/iter', src, re.M)
+              return int(m.group(1)) if m else None
+          canary = val('parse/foxjson/session-5000') or val('find/foxsearch/zzz-absent-zzz')
+          if canary is None:
+              cls = 'UNKNOWN'
+          elif canary < 900_000:
+              cls = 'FAST'
+          elif canary < 1_200_000:
+              cls = 'MEDIUM'
+          else:
+              cls = 'CLASSIC'
+          print(f"runner class: {cls} (canary={canary})")
+          import os
+          if os.environ.get('GITHUB_STEP_SUMMARY'):
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+                  f.write(f"Runner class: **{cls}** (canary={canary} ns — см. docs/PROFILING.md)\n")
+          PYEOF
+
       # История производительности в ветке gh-pages + алерт при регрессе >150%.
       # continue-on-error оставлен (сбой push в gh-pages не должен красить
       # бенч-джобу), но шаг Verify выше теперь ловит потерю формата громко.
