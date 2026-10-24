@@ -23,6 +23,18 @@ const CORPUS: [&str; 14] = [
     "https://example.com/a/./b/../c?x=1#f",
 ];
 
+/// Подкорпус с пересборкой as_str (flags / host_owned / пустой путь):
+/// сериализация — вторая половина полного конвейера parse+serialize.
+const DIRTY: [&str; 7] = [
+    "https://Example.COM/Upper/Case?a=B#Frag", // scheme+host lowercase
+    "https://example.com/a/./b/../c/./d/e/../f?x=1#f", // dot-сегменты (плотно)
+    "https://example.com",                     // пустой путь -> "/"
+    "https://cdn.example.org/assets/bundle-812/chunk/app.main.min.css", // точки в имени
+    "https://user:pa:ss@example.com/secure/path", // ':' в пароле -> %3A
+    "https://example.com/pa th/x?q=a b#f rag", // пробелы: путь+запрос+фрагмент
+    "https://maps.example.com/поиск?q=значение", // не-ASCII (UTF-8 percent)
+];
+
 fn bench_parse(c: &mut Criterion) {
     let mut group = c.benchmark_group("parse");
     for (k, url) in CORPUS.iter().enumerate() {
@@ -53,5 +65,53 @@ fn bench_parse(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_parse);
+/// Изолированная сериализация: parse вне цикла, as_str (с пересборкой
+/// для грязных URL) в цикле.
+fn bench_serialize(c: &mut Criterion) {
+    let mut group = c.benchmark_group("serialize");
+    group.throughput(Throughput::Elements(1));
+    for (k, url_str) in DIRTY.iter().enumerate() {
+        let parsed = foxurl::parse(url_str).unwrap();
+        group.bench_with_input(criterion::BenchmarkId::new("foxurl", k), url_str, |b, _| {
+            b.iter(|| black_box(&parsed).as_str())
+        });
+    }
+    let parsed: Vec<_> = DIRTY.iter().map(|u| foxurl::parse(u).unwrap()).collect();
+    group.throughput(Throughput::Elements(DIRTY.len() as u64));
+    group.bench_function("foxurl/dirty-all", |b| {
+        b.iter(|| {
+            for p in &parsed {
+                black_box(p.as_str());
+            }
+        })
+    });
+    group.finish();
+}
+
+/// Полный конвейер «canonical string»: foxurl — parse + ленивая
+/// сериализация; url — parse (нормализация жадная, as_str бесплатна).
+/// Честное end-to-end сравнение получения канонической строки.
+fn bench_canonical(c: &mut Criterion) {
+    let mut group = c.benchmark_group("canonical");
+    for (name, corpus) in [("corpus-all", &CORPUS[..]), ("dirty-all", &DIRTY[..])] {
+        group.throughput(Throughput::Elements(corpus.len() as u64));
+        group.bench_function(format!("foxurl/{name}"), |b| {
+            b.iter(|| {
+                for u in corpus {
+                    black_box(foxurl::parse(black_box(u)).unwrap().as_str());
+                }
+            })
+        });
+        group.bench_function(format!("url_crate/{name}"), |b| {
+            b.iter(|| {
+                for u in corpus {
+                    black_box(url::Url::parse(black_box(u)).unwrap().as_str());
+                }
+            })
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_parse, bench_serialize, bench_canonical);
 criterion_main!(benches);

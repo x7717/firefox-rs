@@ -19,6 +19,18 @@
 //! (as_mut_vec, все непишущиеся байты — ASCII), стек сегментов без
 //! Vec в write_path_normalized, прямая запись lowercased scheme/host.
 //!
+//! Итерация 11 (v0.4): ТОЧНЫЙ F_PATH_NORM — флаг взводится только на
+//! настоящем dot-сегменте (сегмент, целиком состоящий из «.»/«%2e»-паттерна):
+//! точки ВНУТРИ сегментов («app.main.min.css», «index.html») и проценты
+//! вне dot-паттернов («%20») больше не вынуждают пересборку as_str —
+//! такие URL остаются zero-copy (полкорпуса бенча!). Lookahead парсера
+//! срабатывает только на начале сегмента и ограничен 6 байтами. Плюс:
+//! нормализация dot-сегментов распространена на НЕ-специальные схемы с
+//! authority (WHATWG path state — раньше был баг паритета с `url`);
+//! классификация сегментов в write_path_normalized — одним switch по
+//! длине (было до 5 вызовов eq_ignore_ascii_case на сегмент); fast-path
+//! write_encoded — предикат false на всём срезе => одна memcpy.
+//!
 //! Ограничения v0.1 (документированы): не-ASCII хосты (IDNA/punycode) и
 //! file-специфика Windows (буквы дисков) не поддерживаются — `Err`.
 
@@ -117,7 +129,7 @@ fn scheme_kind(name_lower: &str) -> SchemeKind {
 
 const F_SCHEME_LOWER: u8 = 1 << 0;
 const F_HOST_LOWER: u8 = 1 << 1;
-const F_PATH_NORM: u8 = 1 << 2; // dot-сегменты или backslash в пути
+const F_PATH_NORM: u8 = 1 << 2; // настоящий dot-сегмент или backslash в пути
 const F_PATH_ENC: u8 = 1 << 3;
 const F_QUERY_ENC: u8 = 1 << 4;
 const F_FRAG_ENC: u8 = 1 << 5;
@@ -598,6 +610,15 @@ impl<'a> Url<'a> {
     /// затем запрос и фрагмент. Скан — по константной таблице
     /// классификации (одна загрузка вместо ветвистого match):
     /// обычные байты дают t == 0 — самый предсказуемый путь.
+    ///
+    /// v0.4: флаги аккумулируются в acc (одна запись self.flags —
+    /// урок итерации 10 про RMW через память), а F_PATH_NORM — ТОЧНЫЙ:
+    /// горячий цикл только ОТМЕЧАЕТ кандидата ('.'/'%' в начале сегмента —
+    /// регистровый OR, БЕЗ вызовов), а точную классификацию сегмента
+    /// делает ОДИН холодный проход path_has_dot_segment ПОСЛЕ цикла
+    /// (инлайн lookahead в цикле раздувал код: +8% на всём parse-корпусе,
+    /// урок итерации 6). Точки внутри сегментов («app.main.min.css»)
+    /// и «%20» кандидата НЕ дают — URL остаётся zero-copy (полкорпуса бенча).
     fn parse_path_query_fragment(&mut self, start: usize) -> Result<(), Error> {
         let bytes = self.raw.as_bytes();
         let len = bytes.len();
@@ -611,6 +632,8 @@ impl<'a> Url<'a> {
 
         let path_start = i;
         let mut path_end = i;
+        let mut acc = 0u8;
+        let mut dot_cand = false;
         while i < len {
             let t = table[bytes[i] as usize];
             if t == 0 {
@@ -619,7 +642,11 @@ impl<'a> Url<'a> {
                 continue;
             }
             if t & (T_QUERY | T_HASH) != 0 {
+                self.flags |= acc;
                 self.path = (path_start as u32, path_end as u32);
+                if dot_cand && path_has_dot_segment(bytes, path_start, path_end, special) {
+                    self.flags |= F_PATH_NORM;
+                }
                 if t & T_HASH != 0 {
                     self.parse_fragment(i + 1);
                 } else {
@@ -627,12 +654,25 @@ impl<'a> Url<'a> {
                 }
                 return Ok(());
             }
-            // младшие биты t — сами F_PATH_NORM / F_PATH_ENC
-            self.flags |= t;
+            if t & T_DOTLEAD != 0 {
+                // Путь при authority начинается всегда с '/' (или '\' у
+                // спец-схем) либо пуст — сегмент не может начинаться в
+                // i == start; bytes[i-1] — разделитель — начало сегмента.
+                // Точную классификацию сегмента делает холодный проход
+                // после цикла — горячий цикл без вызовов.
+                dot_cand |=
+                    i > start && (bytes[i - 1] == b'/' || (special && bytes[i - 1] == b'\\'));
+            }
+            // младшие биты t — сами F_PATH_NORM (только '\') / F_PATH_ENC
+            acc |= t & (F_PATH_ENC | F_PATH_NORM);
             i += 1;
             path_end = i;
         }
+        self.flags |= acc;
         self.path = (path_start as u32, path_end as u32);
+        if dot_cand && path_has_dot_segment(bytes, path_start, path_end, special) {
+            self.flags |= F_PATH_NORM;
+        }
         Ok(())
     }
 
@@ -739,6 +779,105 @@ fn fragment_needs_enc(c: u8) -> bool {
     !(0x20..=0x7E).contains(&c) || matches!(c, b' ' | b'"' | b'<' | b'>' | b'`')
 }
 
+/// Классификация dot-сегмента WHATWG (регистр «E» в %2E не важен):
+/// 0 — обычный сегмент; 1 — single-dot («.» или «%2e»); 2 — double-dot
+/// («..», «.%2e», «%2e.», «%2e%2e»). Диспетчеризация по длине: обычный
+/// сегмент отсекается ОДНЫМ сравнением длины (было: до 5 вызовов
+/// eq_ignore_ascii_case на КАЖДЫЙ сегмент write_path_normalized).
+/// Используется и в lookahead парсера (seg_is_dot), и в записи —
+/// семантика одна (проверено тестом dot_kind_matches_reference).
+#[inline]
+fn dot_kind(seg: &[u8]) -> u8 {
+    match seg.len() {
+        1 => u8::from(seg[0] == b'.'),
+        2 => u8::from(seg[0] == b'.' && seg[1] == b'.') << 1,
+        3 => u8::from(seg[0] == b'%' && seg[1] == b'2' && (seg[2] | 0x20) == b'e'),
+        4 => {
+            if seg[0] == b'.' {
+                u8::from(seg[1] == b'%' && seg[2] == b'2' && (seg[3] | 0x20) == b'e') << 1
+            } else if seg[0] == b'%' {
+                u8::from(seg[1] == b'2' && (seg[2] | 0x20) == b'e' && seg[3] == b'.') << 1
+            } else {
+                0
+            }
+        }
+        6 => {
+            u8::from(
+                seg[0] == b'%'
+                    && seg[1] == b'2'
+                    && (seg[2] | 0x20) == b'e'
+                    && seg[3] == b'%'
+                    && seg[4] == b'2'
+                    && (seg[5] | 0x20) == b'e',
+            ) << 1
+        }
+        _ => 0,
+    }
+}
+
+/// Точный проход по пути [from..to): существует ли НАСТОЯЩИЙ dot-сегмент
+/// (сегмент, целиком состоящий из dot-паттерна). Вызывается ПОСЛЕ горячего
+/// цикла парсера и только при кандидате (точка/процент в начале сегмента) —
+/// РЕДКИЙ путь: #[cold] держит тело вне горячего кода.
+#[cold]
+#[inline(never)]
+fn path_has_dot_segment(bytes: &[u8], from: usize, to: usize, special: bool) -> bool {
+    for i in from..to {
+        let c = bytes[i];
+        if (c == b'.' || c == b'%')
+            && (i == from || bytes[i - 1] == b'/' || (special && bytes[i - 1] == b'\\'))
+            && seg_is_dot(bytes, i, special)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Lookahead парсера: является ли сегмент [from..разделитель) dot-сегментом.
+/// Читает до 8 байтов в стековый буфер (dot-сегмент не длиннее 6; сегменты
+/// 7+ отсекаются). Индексы сравнений — КОНСТАНТЫ (buf[0..=5]) — без
+/// bounds-checks. «.?gitignore» проверяется проходом, но НЕ является
+/// dot-сегментом.
+///
+/// Архитектурное требование: #[inline(never)] — РЕДКИЙ вызов (только на
+/// '.'/'%' в начале сегмента). Инлайн в горячий цикл parse_path_query_
+/// fragment раздул код и дал +8% на всём parse-корпусе (урок итерации 6
+/// про границы инлайна), а вызов здесь дешевле раздутого цикла.
+#[inline(never)]
+fn seg_is_dot(bytes: &[u8], from: usize, special: bool) -> bool {
+    let n = bytes.len();
+    let mut buf = [0u8; 8];
+    let mut len = 0usize;
+    while len < 8 && from + len < n {
+        let c = bytes[from + len];
+        if c == b'/' || c == b'?' || c == b'#' || (special && c == b'\\') {
+            break;
+        }
+        buf[len] = c;
+        len += 1;
+    }
+    let e = |c: u8| c == b'e' || c == b'E';
+    match len {
+        1 => buf[0] == b'.',
+        2 => buf[0] == b'.' && buf[1] == b'.',
+        3 => buf[0] == b'%' && buf[1] == b'2' && e(buf[2]),
+        4 => {
+            (buf[0] == b'.' && buf[1] == b'%' && buf[2] == b'2' && e(buf[3]))
+                || (buf[0] == b'%' && buf[1] == b'2' && e(buf[2]) && buf[3] == b'.')
+        }
+        6 => {
+            buf[0] == b'%'
+                && buf[1] == b'2'
+                && e(buf[2])
+                && buf[3] == b'%'
+                && buf[4] == b'2'
+                && e(buf[5])
+        }
+        _ => false, // len == 0, 5, 7, 8 — dot-сегментов такой длины нет
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Таблицы классификации байтов пути/запроса (v0.3)
 // ---------------------------------------------------------------------------
@@ -748,10 +887,13 @@ fn fragment_needs_enc(c: u8) -> bool {
 // в self.flags без перекодировки).
 const T_QUERY: u8 = 1 << 6; // '?' завершает путь
 const T_HASH: u8 = 1 << 7; // '#' завершает путь/запрос
+/// '.'/'%' — потенциальное начало dot-сегмента: запускает lookahead
+/// парсера (бит таблицы, НЕ флаг Url — в self.flags не OR-ится).
+const T_DOTLEAD: u8 = 1 << 5;
 
 /// Таблица классификации байтов пути. '\\' даёт NORM только у спец-схем;
-/// '.'/'%' — всегда (флаг NORM читается только у спец-схем — для opaque
-/// безвреден, как и до v0.3).
+/// '.'/'%' — маркер T_DOTLEAD: реальный NORM ставит lookahead парсера,
+/// когда сегмент ЦЕЛИКОМ — dot-паттерн (v0.4).
 const fn build_path_table(special: bool) -> [u8; 256] {
     let mut t = [0u8; 256];
     let mut c = 0usize;
@@ -761,7 +903,14 @@ const fn build_path_table(special: bool) -> [u8; 256] {
         if path_needs_enc(b) {
             v |= F_PATH_ENC;
         }
-        if matches!(b, b'.' | b'%') || (special && b == b'\\') {
+        if matches!(b, b'.' | b'%') {
+            // v0.4: не безусловный F_PATH_NORM — только маркер lookahead.
+            // Реальный флаг ставит парсер, когда сегмент ЦЕЛИКОМ —
+            // dot-паттерн (см. parse_path_query_fragment). Точки внутри
+            // сегментов («index.html») и «%20» пересборку не вызывают.
+            v |= T_DOTLEAD;
+        }
+        if special && b == b'\\' {
             v |= F_PATH_NORM;
         }
         if b == b'?' {
@@ -1042,8 +1191,11 @@ impl<'a> Url<'a> {
                 } else {
                     out.push_str(&raw[ps..pe]);
                 }
-            } else if self.flags & F_PATH_ENC != 0 {
-                write_encoded(&mut out, path, path_needs_enc);
+            } else if self.flags & (F_PATH_NORM | F_PATH_ENC) != 0 {
+                // v0.4: WHATWG path state обрабатывает dot-сегменты и у
+                // НЕ-специальных схем (раньше — паритет-баг с `url`);
+                // '\' разделителем здесь НЕ является.
+                write_path_normalized(&mut out, path, false);
             } else {
                 out.push_str(&raw[ps..pe]);
             }
@@ -1121,19 +1273,19 @@ impl<'a> Url<'a> {
         self.port.or_else(|| self.kind.default_port())
     }
 
-    /// Путь: для специальных схем пустой путь — "/", dot-сегменты нормализованы.
+    /// Путь: у специальных схем пустой путь — "/", dot-сегменты
+    /// нормализованы (v0.4 — и у не-специальных с authority).
     pub fn path(&self) -> Cow<'_, str> {
         let (ps, pe) = (self.path.0 as usize, self.path.1 as usize);
         let p = &self.raw[ps..pe];
-        if self.kind.is_special() {
-            if p.is_empty() {
-                return Cow::Borrowed("/");
-            }
-            if self.flags & (F_PATH_NORM | F_PATH_ENC) != 0 {
-                let mut buf = String::new();
-                write_path_normalized(&mut buf, p.as_bytes(), true);
-                return Cow::Owned(buf);
-            }
+        let special = self.kind.is_special();
+        if special && p.is_empty() {
+            return Cow::Borrowed("/");
+        }
+        if self.flags & (F_PATH_NORM | F_PATH_ENC) != 0 {
+            let mut buf = String::with_capacity(p.len() + 1);
+            write_path_normalized(&mut buf, p.as_bytes(), special);
+            return Cow::Owned(buf);
         }
         Cow::Borrowed(p)
     }
@@ -1183,20 +1335,57 @@ impl<'a> Url<'a> {
 /// Запись — сырыми байтами через `as_mut_vec` (было: `out.push(c as char)`
 /// с UTF-8-механикой и проверкой ёмкости на каждый байт — 8.3%+1.4% профиля).
 ///
+/// v0.4 fast-path: предикат false на всём срезе => одна memcpy вместо
+/// побайтового push (типичные сегменты/запросы целиком чистые — основной
+/// случай в write_path_normalized).
+///
 /// SAFETY: пишутся только ASCII-байты. Все предикаты (`path_`, `query_`,
 /// `fragment_`, `userinfo_needs_enc`) при needs(c) == false допускают
 /// только байты 0x20..=0x7E (не-ASCII и C0 кодируются в %XX), а байты
-/// "%XY" и HEX — ASCII. UTF-8-валидность String не нарушается.
+/// «%XY» и HEX — ASCII. UTF-8-валидность String не нарушается (в fast-path
+/// срез ЦЕЛИКОМ из 0x20..=0x7E — ASCII).
 fn write_encoded(out: &mut String, bytes: &[u8], needs: impl Fn(u8) -> bool) {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let v = unsafe { out.as_mut_vec() };
     v.reserve(bytes.len());
+    if !bytes.iter().any(|&c| needs(c)) {
+        push_bytes(v, bytes);
+        return;
+    }
     for &c in bytes {
         if needs(c) {
             v.extend_from_slice(&[b'%', HEX[(c >> 4) as usize], HEX[(c & 0xF) as usize]]);
         } else {
             v.push(c);
         }
+    }
+}
+
+/// Копирование байтов в Vec без вызова memcpy для коротких кусков:
+/// чанки фиксированной длины (u64/u32/u16/u8) инлайнятся в мувы — вызов
+/// memcpy на кусках 1-6 байтов (типичные сегменты) дороже самого
+/// копирования (давало +13.7% на userinfo-сериализации).
+#[inline]
+fn push_bytes(v: &mut Vec<u8>, bytes: &[u8]) {
+    let mut i = 0;
+    while bytes.len() - i >= 8 {
+        let c = u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap());
+        v.extend_from_slice(&c.to_le_bytes());
+        i += 8;
+    }
+    if bytes.len() - i >= 4 {
+        let c = u32::from_le_bytes(bytes[i..i + 4].try_into().unwrap());
+        v.extend_from_slice(&c.to_le_bytes());
+        i += 4;
+    }
+    let rem = bytes.len() - i; // 0..=3
+    if rem & 2 != 0 {
+        let c = u16::from_le_bytes(bytes[i..i + 2].try_into().unwrap());
+        v.extend_from_slice(&c.to_le_bytes());
+        i += 2;
+    }
+    if rem & 1 != 0 {
+        v.push(bytes[i]);
     }
 }
 
@@ -1225,42 +1414,46 @@ fn write_path_normalized(out: &mut String, path: &[u8], split_backslash: bool) {
             let is_last = pos == n;
             if k >= start {
                 let seg = &path[elem_start..pos];
-                if seg.len() == 1 && seg[0] == b'.' || seg.eq_ignore_ascii_case(b"%2e") {
-                    if is_last {
-                        trailing = true;
+                // Классификация одним switch по длине (v0.4; было: до 5
+                // вызовов eq_ignore_ascii_case на каждый сегмент).
+                match dot_kind(seg) {
+                    1 => {
+                        if is_last {
+                            trailing = true;
+                        }
                     }
-                } else if seg.len() == 2 && seg == b".."
-                    || seg.eq_ignore_ascii_case(b".%2e")
-                    || seg.eq_ignore_ascii_case(b"%2e.")
-                    || seg.eq_ignore_ascii_case(b"%2e%2e")
-                {
-                    if depth > 0 {
-                        depth -= 1;
-                        let p = if depth < STACK_CAP {
-                            stack[depth]
+                    2 => {
+                        if depth > 0 {
+                            depth -= 1;
+                            let p = if depth < STACK_CAP {
+                                stack[depth]
+                            } else {
+                                // spill — чистое LIFO-расширение стека: индекс
+                                // spill[depth-CAP] после перемешанных pop/push
+                                // указывал на мёртвую ячейку (поймано тестом
+                                // deep_path_segment_stack_spill при CAP=8)
+                                spill.pop().expect("spill согласован с depth")
+                            };
+                            out.truncate(p);
+                        }
+                        if is_last {
+                            trailing = true;
+                        }
+                    }
+                    _ => {
+                        if is_last && seg.is_empty() {
+                            trailing = true; // путь заканчивается разделителем
                         } else {
-                            // spill — чистое LIFO-расширение стека: индекс
-                            // spill[depth-CAP] после перемешанных pop/push
-                            // указывал на мёртвую ячейку (поймано тестом
-                            // deep_path_segment_stack_spill при CAP=8)
-                            spill.pop().expect("spill согласован с depth")
-                        };
-                        out.truncate(p);
+                            if depth < STACK_CAP {
+                                stack[depth] = out.len();
+                            } else {
+                                spill.push(out.len());
+                            }
+                            depth += 1;
+                            out.push('/');
+                            write_encoded(out, seg, path_needs_enc);
+                        }
                     }
-                    if is_last {
-                        trailing = true;
-                    }
-                } else if is_last && seg.is_empty() {
-                    trailing = true; // путь заканчивается разделителем
-                } else {
-                    if depth < STACK_CAP {
-                        stack[depth] = out.len();
-                    } else {
-                        spill.push(out.len());
-                    }
-                    depth += 1;
-                    out.push('/');
-                    write_encoded(out, seg, path_needs_enc);
                 }
             }
             k += 1;
@@ -1322,7 +1515,7 @@ mod tests {
     /// согласие ok/err и равенство сериализаций.
     #[test]
     fn matches_url_crate_corpus() {
-        let corpus: [&str; 30] = [
+        let corpus = [
             "https://example.com/page/42?q=firefox&tab=7",
             "https://news.example.org/articles/2026/10/firefox-rs?page=3&sort=desc#comments",
             "https://cdn.example.org/assets/bundle-812/chunk/app.main.min.css",
@@ -1353,6 +1546,23 @@ mod tests {
             "https://example.com/%2e%2e/root",
             "https://example.com/back\\slash\\path",
             "ftp://files.example.org:21/pub/linux/",
+            // v0.4: точный F_PATH_NORM + generic-нормализация
+            "x://h/a/../b",
+            "x://h/a/./b",
+            "x://h/a/b/..",
+            "x://h/../c",
+            "x://h/a/%2E/b",
+            "x://h",
+            "https://a/app.main.min.css",
+            "https://a/index.html?q=/a/../b",
+            "https://a/%20/x",
+            "https://a/%2ex",
+            "https://a/x/%2e",
+            "https://a/x/%2e%2E/y",
+            "https://a/.gitignore/./x",
+            "https://user:pa:ss@example.com/secure/path",
+            "https://example.com/pa th/x?q=a b#f rag",
+            "https://maps.example.com/поиск?q=значение",
         ];
         for input in corpus {
             let ours = parse(input);
@@ -1425,6 +1635,101 @@ mod tests {
             assert_eq!(o.fragment(), t.fragment(), "fragment {input:?}");
             assert_eq!(o.username(), t.username(), "username {input:?}");
             assert_eq!(o.password(), t.password(), "password {input:?}");
+        }
+    }
+
+    /// Эквивалентность dot_kind эталонной цепочке eq_ignore_ascii_case
+    /// (бывшей реализации write_path_normalized) — исчерпывающе по
+    /// алфавиту dot-паттернов до длины 6 включительно.
+    #[test]
+    fn dot_kind_matches_reference() {
+        fn reference(seg: &[u8]) -> u8 {
+            if seg.len() == 1 && seg[0] == b'.' || seg.eq_ignore_ascii_case(b"%2e") {
+                1
+            } else if seg.len() == 2 && seg == b".."
+                || seg.eq_ignore_ascii_case(b".%2e")
+                || seg.eq_ignore_ascii_case(b"%2e.")
+                || seg.eq_ignore_ascii_case(b"%2e%2e")
+            {
+                2
+            } else {
+                0
+            }
+        }
+        const ALPHA: &[u8] = b".%2eEx/";
+        let mut buf = [0u8; 8];
+        for len in 0..=6usize {
+            let total = ALPHA.len().pow(len as u32);
+            for idx in 0..total {
+                let mut x = idx;
+                for slot in buf[..len].iter_mut() {
+                    *slot = ALPHA[x % ALPHA.len()];
+                    x /= ALPHA.len();
+                }
+                let seg = &buf[..len];
+                assert_eq!(dot_kind(seg), reference(seg), "seg={:?}", seg);
+            }
+        }
+        // длиннее 6 байтов dot-сегментов не бывает
+        for long in ["......", "%2e%2e%2e", ".%2e%2e%2e", "....x"] {
+            assert_eq!(dot_kind(long.as_bytes()), reference(long.as_bytes()));
+            assert_eq!(dot_kind(long.as_bytes()), 0);
+        }
+    }
+
+    /// Точность F_PATH_NORM (v0.4): точки ВНУТРИ сегментов и «%20»
+    /// не вынуждают пересборку as_str — zero-copy сохраняется; настоящие
+    /// dot-сегменты/кодирование/обратные слэши — по-прежнему Owned.
+    #[test]
+    fn path_flag_precision_zero_copy() {
+        for u in [
+            "https://a/app.main.min.css",
+            "https://a/index.html",
+            "https://a/x/y.txt/",
+            "https://a/%20/x",
+            "https://a/x.%20y",
+            "https://a/%2ex",
+            "https://a/.gitignore",
+        ] {
+            let p = parse(u).unwrap();
+            assert!(
+                matches!(p.as_str(), Cow::Borrowed(_)),
+                "must be borrowed: {u}"
+            );
+            assert_eq!(p.as_str(), u, "borrowed = вход без изменений: {u}");
+        }
+        for u in [
+            "https://a/./x",
+            "https://a/x/../y",
+            "https://a/%2e/y",
+            "https://a/pa th",
+            "https://a\\b",
+        ] {
+            let p = parse(u).unwrap();
+            assert!(matches!(p.as_str(), Cow::Owned(_)), "must be owned: {u}");
+        }
+    }
+
+    /// WHATWG path state нормализует dot-сегменты и у НЕ-специальных схем
+    /// с authority (v0.4 — раньше был баг паритета с `url`).
+    #[test]
+    fn non_special_authority_normalizes_dots() {
+        for (input, expect) in [
+            ("x://h/a/../b", "x://h/b"),
+            ("x://h/a/./b", "x://h/a/b"),
+            ("x://h/a/b/..", "x://h/a/"),
+            ("x://h/../c", "x://h/c"),
+            ("x://h/a/%2E/b", "x://h/a/b"),
+            ("x://h", "x://h"),
+        ] {
+            let ours = parse(input).unwrap();
+            assert_eq!(ours.as_str(), expect, "ours: {input}");
+            assert_eq!(
+                url::Url::parse(input).unwrap().as_str(),
+                expect,
+                "url: {input}"
+            );
+            assert_eq!(ours.path().as_ref(), url::Url::parse(input).unwrap().path());
         }
     }
 
@@ -1862,9 +2167,12 @@ mod tests {
             // путь: ENC-бит == предикату (в обеих ветках)
             assert_eq!(ps & F_PATH_ENC != 0, path_needs_enc(c), "path special {c}");
             assert_eq!(pg & F_PATH_ENC != 0, path_needs_enc(c), "path generic {c}");
-            // '\\' — NORM только у спец-схем
-            assert_eq!(ps & F_PATH_NORM != 0, matches!(c, b'.' | b'%' | b'\\'));
-            assert_eq!(pg & F_PATH_NORM != 0, matches!(c, b'.' | b'%'));
+            // v0.4: NORM — только '\\' у спец-схем; '.'/'%' — маркер
+            // T_DOTLEAD (реальный флаг ставит lookahead парсера)
+            assert_eq!(ps & F_PATH_NORM != 0, c == b'\\');
+            assert!(!(pg & F_PATH_NORM != 0));
+            assert_eq!(ps & T_DOTLEAD != 0, matches!(c, b'.' | b'%'));
+            assert_eq!(pg & T_DOTLEAD != 0, matches!(c, b'.' | b'%'));
             // управление
             assert_eq!(ps & T_QUERY != 0, c == b'?');
             assert_eq!(ps & T_HASH != 0, c == b'#');
