@@ -262,7 +262,7 @@ pub fn find_two_bytes(haystack: &[u8], first: u8, second: u8) -> Option<usize> {
 
 /// Первое вхождение `needle` в `haystack`.
 ///
-/// Стратегия (итерация 3, по данным perf-профилей):
+/// Стратегия (итерация 3, по данным perf-профилей; дополнено итерацией 25):
 /// 1. фильтрующий байт иглы — самый РЕДКИЙ по эвристической таблице
 ///    (`pick_filter_byte`), а не просто последний;
 /// 2. скан ведёт изолированное AVX2-ядро [`find_byte`] (32 байта/итерацию):
@@ -273,7 +273,13 @@ pub fn find_two_bytes(haystack: &[u8], first: u8, second: u8) -> Option<usize> {
 /// 3. перед memcmp — два дешёвых пре-фильтра по редчайшим байтам иглы
 ///    (`pick_prefilter_pair`), отсекающие подавляющее большинство ложных
 ///    кандидатов;
-/// 4. финальная сверка — полный memcmp.
+/// 4. финальная сверка — полный memcmp;
+/// 5. итерация 25: на длинных стогах (>= 4КБ) путь B собирает хиты
+///    фильтр-байта ПАКЕТАМИ окнами 4КБ (ядро мульти-сканера) и верифицирует
+///    после окна — при плотном фильтр-байте (URL-потоки) прежний цикл
+///    платил ~8.5 нс/хит (повторный вход в find_byte + зависимые
+///    пре-фильтр-загрузки), пакетная схема — ~2 нс/хит: -29..-36% на
+///    бенче URL-иглы. Короткие стоги остаются на прежнем цикле.
 ///
 /// Для UTF-8 корректно: валидный UTF-8 самосинхронизируется, байтовое
 /// совпадение валидных строк всегда попадает на границу символов.
@@ -315,6 +321,23 @@ pub fn find_substring(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     let (p1, p2) = pick_prefilter_pair(needle, fb);
     let b1 = needle[p1];
     let b2 = needle[p2];
+    #[cfg(target_arch = "x86_64")]
+    {
+        // Итерация 25: плотный фильтр-байт на длинном стоге — пакетный путь
+        // (окна 4КБ мульти-сканера + верификация после окна). Мотивация:
+        // при плотном фильтр-байте (~30К хитов на 10 МБ URL-потока) прежний
+        // цикл платил ~8.5 нс/хит за повторный вход в find_byte и серию
+        // зависимых пре-фильтр-загрузок (33% бенча find на URL-игле);
+        // пакетные верификации независимы и перекрываются OoO-окном.
+        // Порог = размер окна: на коротких стогах хитов мало, накладные
+        // расходы окна не окупаются — прежний путь не хуже.
+        if simd_level() == SIMD_AVX2 && haystack.len() >= MULTI_WINDOW {
+            // Safety: детекция AVX2 выполнена выше.
+            return unsafe {
+                find_substring_path_b_avx2(haystack, needle, fb, [(p1, b1), (p2, b2)])
+            };
+        }
+    }
     let mut i = fb; // минимальный индекс, с которого кандидат помещается целиком
     while i < haystack.len() {
         {
@@ -330,6 +353,59 @@ pub fn find_substring(haystack: &[u8], needle: &[u8]) -> Option<usize> {
             }
             i = end + 1;
         }
+    }
+    None
+}
+
+/// AVX2-путь B для длинных стогов (итерация 25): пакетный сбор хитов
+/// фильтр-байта окнами 4КБ (мономорфное ядро мульти-сканера,
+/// [`multi_scan_window_avx2`] с `ByteScan::Single`), верификация кандидатов
+/// ПОСЛЕ окна в порядке возрастания позиций — та же схема, что в
+/// `MultiNeedle::find_impl_avx2` (урок итерации 3 соблюдён: скалярная
+/// верификация остаётся ВНЕ горячего цикла ядра).
+///
+/// Левосторонность: хиты собираются по возрастанию внутри окна, окна
+/// обрабатываются по возрастанию; start = p - fb монотонен по p, поэтому
+/// первый совпавший кандидат — левейший, как и в скалярном цикле.
+///
+/// # Safety
+/// Вызывать только при поддержке AVX2 (`simd_level() == SIMD_AVX2`).
+#[cfg(target_arch = "x86_64")]
+unsafe fn find_substring_path_b_avx2(
+    haystack: &[u8],
+    needle: &[u8],
+    fb: usize,
+    pf: [(usize, u8); 2],
+) -> Option<usize> {
+    let n = needle.len();
+    let scan = ByteScan::Single(needle[fb]);
+    let mut w = 0usize;
+    let mut buf = [0u16; MULTI_HITS_CAP];
+    while w < haystack.len() {
+        let wlen = MULTI_WINDOW.min(haystack.len() - w);
+        // Safety: детекция AVX2 выполнена вызывающим (find_substring);
+        // срез haystack[w..] валиден для чтения.
+        let cnt = multi_scan_window_avx2(&haystack[w..], wlen, &scan, &mut buf);
+        for &off in buf[..cnt].iter() {
+            let p = w + off as usize;
+            if p < fb {
+                continue; // кандидат не помещается (окно с начала стога)
+            }
+            let start = p - fb;
+            if start + n <= haystack.len()
+                && haystack[start + pf[0].0] == pf[0].1
+                && haystack[start + pf[1].0] == pf[1].1
+                && haystack[start..start + n] == *needle
+            {
+                return Some(start);
+            }
+        }
+        w = if cnt == MULTI_HITS_CAP {
+            // буфер полон: продолжаем с последнего обработанного хита
+            w + buf[cnt - 1] as usize + 1
+        } else {
+            w + MULTI_WINDOW
+        };
     }
     None
 }
@@ -1211,6 +1287,109 @@ mod tests {
                 String::from_utf8_lossy(&pat)
             );
         }
+    }
+
+    // --- итерация 25: пакетный путь B (окна >= 4096) ---
+
+    /// Алфавит с плотным 'x' + игла с fb='x' в середине (путь B): пакетный
+    /// путь активен только на стогах >= MULTI_WINDOW, поэтому свойства
+    /// гоняются на длинах вокруг порога 4095/4096/4097 и крупнее.
+    #[test]
+    fn substring_path_b_batch_matches_std() {
+        let mut rng = Lcg(0x25AD);
+        // плотный 'x': большинство байтов — хиты фильтра (давление на сбор
+        // хитов, продолжение после заполнения буфера, верификацию)
+        let dense = *b"xxxabc";
+        for case in 0..120 {
+            let hlen = match case % 6 {
+                0..=3 => 4080 + rng.below(40) as usize, // вокруг порога 4096
+                _ => 4096 * (1 + case as usize % 3) + rng.below(64) as usize,
+            };
+            let hay: Vec<u8> = (0..hlen).map(|_| dense[rng.below(6) as usize]).collect();
+            // иглы с 'x' не последним байтом (путь B), длины 2..8
+            let plen = 2 + rng.below(7) as usize;
+            let pat: Vec<u8> = (0..plen).map(|_| dense[rng.below(6) as usize]).collect();
+            if pat.iter().rposition(|&b| b == b'x') == Some(plen - 1) {
+                continue; // fb == last — путь A, не эта зона
+            }
+            assert_eq!(
+                find_substring(&hay, &pat),
+                std_find(&hay, &pat),
+                "case={case} hlen={hlen} hay[..64]={:?} pat={:?}",
+                String::from_utf8_lossy(&hay[..64.min(hlen)]),
+                String::from_utf8_lossy(&pat)
+            );
+        }
+    }
+
+    /// Продолжение после заполнения буфера хитов: 700 плотных хитов 'x'
+    /// до совпадения (MULTI_HITS_CAP = 512 < 700) — совпадение обязано
+    /// найтись в продолжении скана.
+    #[test]
+    fn substring_path_b_buffer_full_continuation() {
+        // "xab": fb='x' (rank 0) в индексе 0, last=2 — путь B; 700 хитов
+        // до совпадения (MULTI_HITS_CAP = 512 < 700) — продолжение после
+        // заполнения буфера; совпадение на x×700+"ab" — старт 699
+        let hay = [vec![b'x'; 700], b"ab".to_vec()].concat();
+        assert_eq!(find_substring(&hay, b"xab"), Some(699));
+        // совпадение внутри первого буфера — левейший хит
+        let hay2 = [vec![b'x'; 300], b"ab".to_vec(), vec![b'x'; 5000]].concat();
+        assert_eq!(find_substring(&hay2, b"xab"), Some(299));
+    }
+
+    /// Левосторонность при множестве совпадений: плотный стог, совпадения
+    /// в каждом окне — ответ обязан быть левейшим (как у std).
+    #[test]
+    fn substring_path_b_leftmost_with_dense_hits() {
+        let mut hay = Vec::new();
+        for i in 0..3000 {
+            hay.extend_from_slice(b"axb");
+            if i == 1500 {
+                hay.extend_from_slice(b"PAD");
+            }
+        }
+        let expected = std_find(&hay, b"axb");
+        assert_eq!(find_substring(&hay, b"axb"), expected);
+        assert_eq!(expected, Some(0));
+    }
+
+    /// Хвостовые окна: совпадение, чей фильтр-хит попадает в последнее
+    /// окно (< 32Б — скалярная ветка сбора) и в зону перекрывающегося
+    /// финального блока.
+    #[test]
+    fn substring_path_b_tail_windows() {
+        // len = 3*4096 + 16: финальное окно 16Б (< 32) — скалярная ветка
+        // сбора; "xab" на старте 12301 (последний 'x' перед "ab")
+        let hay1 = [vec![b'x'; 3 * 4096 + 14], b"ab".to_vec()].concat();
+        assert_eq!(find_substring(&hay1, b"xab"), Some(3 * 4096 + 13));
+        // хит в зоне перекрывающегося финального блока: хвост 4002Б,
+        // не кратен 32 — добор перекрывающимся блоком [len-32, len)
+        let hay2 = [vec![b'x'; 4096 + 4000], b"ab".to_vec()].concat();
+        assert_eq!(find_substring(&hay2, b"xab"), Some(8095));
+        // ровно 2 окна + 2 байта
+        let hay3 = [vec![b'x'; 2 * 4096], b"ab".to_vec()].concat();
+        assert_eq!(find_substring(&hay3, b"xab"), Some(2 * 4096 - 1));
+    }
+
+    /// Крайние случаи: 'x' в начале стога (p < fb невозможен при fb=0, но
+    /// возможен при fb>0 — кандидат не помещается, скан продолжается),
+    /// пустые результаты, игла длиннее стога.
+    #[test]
+    fn substring_path_b_edges() {
+        // fb > 0: "axb" (fb='x' в индексе 1); хиты 'x' в начале стога (p=0
+        // < fb=1 — сработал guard p < fb) не дают кандидатов, ответ — 2
+        let hay = b"xxaxbxxx";
+        assert_eq!(find_substring(hay, b"axb"), Some(2));
+        // "axb" вообще нет (хиты есть, совпадений нет) — полный проход
+        assert_eq!(find_substring(b"xxabxxxx", b"axb"), None);
+        // игла длиннее стога
+        assert_eq!(find_substring(b"xx", b"axb"), None);
+        // нет совпадения на плотном стоге — полный проход без ложных находок
+        let hay = vec![b'x'; 9000];
+        assert_eq!(find_substring(&hay, b"axb"), None);
+        // стог ровно пороговой длины без совпадения
+        let hay = vec![b'x'; 4096];
+        assert_eq!(find_substring(&hay, b"axb"), None);
     }
 
     #[test]

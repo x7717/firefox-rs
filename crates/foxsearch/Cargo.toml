@@ -1,6 +1,6 @@
 [package]
 name = "foxsearch"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 license = "MIT"
 description = "Vectorized (SWAR) byte/substring search for Firefox hot paths"
