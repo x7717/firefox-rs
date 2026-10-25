@@ -13,6 +13,8 @@
   6. нет одноклассной пары (exit 2);
   7. равномерный дрейф скорости: все бенчи во флагах, отношения тихие
      (exit 1 + подсказка про дрейф в выводе).
+  8. ПРИМЕТКА микробенча (итерация 34): одиночный флаг <200 нс при тихом
+     крейте — пометка в выводе, exit-код не меняется; макро-флаг без пометки.
 """
 import contextlib
 import io
@@ -111,6 +113,7 @@ def main():
                             run("bbb", scaled(base_vals(), {"foxjson": 1.25}))])
     check("narrow regress -> 1", code == 1)
     check("narrow: ratio подтверждает foxjson", "подтверждают крейт 'foxjson'" in out)
+    check("narrow macro: без ПРИМЕТКИ", "ПРИМЕТКА" not in out)
 
     # 4. ДРЕЙФ: отношения в обе стороны (вниз 13, вверх 19 -> p10/p90 широкие,
     #    верхняя группа +25% > порога -> флаги есть, как в реальных дрейф-парах)
@@ -138,6 +141,18 @@ def main():
     code, out = verdict_of([run("aaa", base_vals()), run("bbb", uniform)])
     check("uniform speed drift -> 1", code == 1)
     check("uniform: подсказка про дрейф", "равномерный дрейф скорости" in out)
+
+    # 8. ПРИМЕТКА микробенча (итерация 34): одиночный флаг <200 нс при тихом
+    #    крейт-медиане -> пометка в выводе, exit-код прежний (РЕГРЕСС -> 1)
+    mv = base_vals()
+    mv["parse/foxurl/2"] = 87
+    mv2 = dict(mv)
+    mv2["parse/foxurl/2"] = 140  # +60.9%, последний <200 нс, крейт foxurl тих
+    code, out = verdict_of([run("aaa", mv), run("bbb", mv2)])
+    check("micro-bench flag -> 1", code == 1)
+    check("micro: ПРИМЕТКА в выводе", "ПРИМЕТКА (итерация 34)" in out)
+    check("micro: локализованный выброс (не 'у ВСЕХ бенчей')",
+          "локализованный выброс" in out)
 
     print(f"\nитог: {'ВСЕ ТЕСТЫ ОК' if ok else 'ЕСТЬ ПРОВАЛЫ'}")
     return 0 if ok else 1
