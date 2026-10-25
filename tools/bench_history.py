@@ -10,7 +10,8 @@ ns/iter — переворот класса выглядит как +85% «ре�
 Использование:
   bench_history.py data.js                 # обзор: прогоны+классы, тренд, fox/std
   bench_history.py data.js --check 20      # вердикт: последний прогон vs последний
-                                           # ОДНОКЛАССНЫЙ; exit 1 если >+20%
+                                           # ОДНОКЛАССНЫЙ; exit 0 паритет /
+                                           # 1 регресс / 2 нет пары / 3 дрейф среды
   bench_history.py --fetch                 # взять data.js из origin/gh-pages (git)
 
 Порог canary (как в .github/workflows/bench.yml, шаг "Runner class canary"):
@@ -112,7 +113,20 @@ def print_overview(meta):
 
 
 def check_regression(meta, threshold_pct):
-    """Вердикт: последний прогон vs последний ОДНОКЛАССНЫЙ предшественник."""
+    """Вердикт: последний прогон vs последний ОДНОКЛАССНЫЙ предшественник.
+
+    Коды выхода: 0 ПАРИТЕТ, 1 РЕГРЕСС, 2 нет пары, 3 ДРЕЙФ среды.
+
+    Итерация 31: одноклассная пара может сидеть на разных VM пула —
+    дрейф бывает и скоростным (все бенчи в одну сторону, FAST +11-17%),
+    и МИКРОАРХИТЕКТУРНЫМ (семейства в противоположные стороны: find/multi
+    -20-23% vs parse/serialize +11% на паре 573f613/2052ec8). Признак
+    дрейфа при наличии флагов: широкий разброс распределения дельт
+    (p90-p10 > 20 п.п.) — сдвиг глобален, а не локализован в коде.
+    Локализованный выброс при узком распределении — настоящий РЕГРЕСС
+    (иначе, например, регресс самого canary-бенча был бы замаскирован).
+    """
+    import statistics
     last = meta[-1]
     prev = next((m for m in reversed(meta[:-1]) if m["cls"] == last["cls"]), None)
     if prev is None:
@@ -121,22 +135,46 @@ def check_regression(meta, threshold_pct):
         return 2
     print(f"== вердикт {last['cid']} [{last['cls']}] vs {prev['cid']} [{prev['cls']}] "
           f"(порог +{threshold_pct}%) ==")
-    regressions = []
+    deltas, regressions = [], []
     for name, v in last["vals"].items():
         pv = prev["vals"].get(name)
         if not pv or not v:
             continue
         delta = (v - pv) / pv * 100.0
+        deltas.append(delta)
         if delta > threshold_pct:
             regressions.append((delta, name, pv, v))
+    if not deltas:
+        print("  нет сравнимых бенчей")
+        return 2
+    deltas.sort()
+    med = statistics.median(deltas)
+    p10 = deltas[int(len(deltas) * 0.10)]
+    p90 = deltas[min(int(len(deltas) * 0.90), len(deltas) - 1)]
+    spread = p90 - p10
+    ca, cb = prev.get("canary"), last.get("canary")
+    cdelta = (cb - ca) / ca * 100.0 if ca and cb else None
+    print(f"  распределение дельт: median {med:+.2f}%, p10 {p10:+.2f}%, "
+          f"p90 {p90:+.2f}% (разброс {spread:.1f} п.п.)"
+          + (f", canary {cdelta:+.2f}%" if cdelta is not None else ""))
     if not regressions:
+        note = " (внимание: заметный дрейф скорости — сравнение грубое)" \
+               if (cdelta is not None and abs(cdelta) > 3) or spread > 20 else ""
         print(f"  ПАРИТЕТ: ни один бенч не превышает +{threshold_pct}% "
-              f"от одноклассного предшественника.")
+              f"от одноклассного предшественника.{note}")
         return 0
     regressions.sort(reverse=True)
     for delta, name, pv, v in regressions[:15]:
-        print(f"  РЕГРЕСС +{delta:.1f}%  {name}: {pv:.0f} -> {v:.0f}")
-    print(f"\n  ИТОГ: {len(regressions)} бенчей(а) выше порога — требуется разбор.")
+        print(f"  ФЛАГ +{delta:.1f}%  {name}: {pv:.0f} -> {v:.0f}")
+    if spread > 20.0:
+        print(f"\n  ИТОГ: ДРЕЙФ СРЕДЫ — разброс дельт {spread:.1f} п.п. широкий, "
+              f"сдвиг глобальный (разные VM/микроархитектуры пула), а не "
+              f"локализованное изменение кода. Флаги — часть общего "
+              f"перетасовки. Для точного вердикта — повторный прогон.")
+        return 3
+    print(f"\n  ИТОГ: РЕГРЕСС — {len(regressions)} бенчей(а) выше порога при "
+          f"узком распределении (разброс {spread:.1f} п.п.) — локализованный "
+          f"выброс, требуется разбор кода.")
     return 1
 
 
