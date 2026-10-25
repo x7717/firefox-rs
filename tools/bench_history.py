@@ -14,6 +14,21 @@ ns/iter — переворот класса выглядит как +85% «ре�
                                            # 1 регресс / 2 нет пары / 3 дрейф среды
   bench_history.py --fetch                 # взять data.js из origin/gh-pages (git)
 
+Итерация 32: слой ОТНОШЕНИЙ fox/эталон (крейт-медианы). Отношение
+fox/эталон внутри одного прогона иммунно к СКОРОСТНОМУ дрейфу (FAST-пара
+470d380/9337c7e: canary +14.4%, отношения <= +-1%) но НЕ иммунно к
+МИКРОАРХИТЕКТУРНОМУ (крейт-медианы движутся в ОБЕ стороны: foxsearch
++41..+47% при foxurl/foxjson -6..-29%). Асимметрия: регресс гонит
+отношения своего крейта только ВВЕРХ; дрейф — в обе стороны. Поэтому
+при широком разбросе абс. дельт (старый вердикт ДРЕЙФ) пара уточняется:
+  - есть крейт с медианой <= SUPPRESSED (относительно УСКОРЕН — кодом
+    не бывает) => ДРЕЙФ;
+  - все крейты >= SUPPRESSED и top >= ELEVATED => РЕГРЕСС, замаскированный
+    разбросом (локализованный, отношения указывают крейт);
+  - иначе => ДРЕЙФ (повторный прогон).
+Калибровка (8 тихих пар, 24 крейт-медианы): max +4.3% / min -1.5% /
+span <= 4.8 п.п.; дрейф-пары (6): min <= -6.4%, span >= 40 п.п.
+
 Порог canary (как в .github/workflows/bench.yml, шаг "Runner class canary"):
   session-5000 < 900_000 -> FAST; < 1_200_000 -> MEDIUM; иначе CLASSIC.
 Зависимости: только stdlib.
@@ -30,6 +45,10 @@ FAST_T = 900_000
 CLASSIC_T = 1_200_000
 CANARY = "parse/foxjson/session-5000"
 CANARY_FALLBACK = "find/foxsearch/zzz-absent-zzz"
+
+# пороги слоя отношений (калибровка итерации 32, см. шапку)
+RATIO_ELEVATED = 8.0     # крейт-медиана >= +8% — крейт подозрительно замедлен
+RATIO_SUPPRESSED = -5.0  # <= -5% — крейт относительно УСКОРЕН (регрессом не бывает)
 
 # пары "оптимизированная реализация" / "эталон" — внутри-прогонный паритет не зависит от класса
 PAIR_RULES = [
@@ -112,6 +131,31 @@ def print_overview(meta):
         print(f"  {m['cid']} [{m['cls']:<7}] " + "  ".join(rs))
 
 
+def crate_ratio_deltas(prev_vals, last_vals):
+    """Медианные дельты отношений fox/эталон по крейтам (foxjson/foxurl/foxsearch).
+
+    Отношение считается только с fox-стороны (партнёр через std_partner).
+    Возврат: {крейт: медианная дельта, %}. Иммунно к скоростному дрейфу,
+    НЕ иммунно к микроархитектурному (см. шапку модуля).
+    """
+    import statistics
+    ratios = []
+    for name, v in last_vals.items():
+        partner = std_partner(name)
+        pv_p = prev_vals.get(partner) if partner else None
+        pv = prev_vals.get(name)
+        if not (partner and pv_p and pv and v and name in prev_vals):
+            continue
+        ratios.append((name.split("/")[1],
+                       (v / pv) / (last_vals[partner] / pv_p)))
+    out = {}
+    for crate in sorted({c for c, _ in ratios}):
+        ds = [(r - 1.0) * 100.0 for c, r in ratios if c == crate]
+        if ds:
+            out[crate] = statistics.median(ds)
+    return out
+
+
 def check_regression(meta, threshold_pct):
     """Вердикт: последний прогон vs последний ОДНОКЛАССНЫЙ предшественник.
 
@@ -125,6 +169,13 @@ def check_regression(meta, threshold_pct):
     (p90-p10 > 20 п.п.) — сдвиг глобален, а не локализован в коде.
     Локализованный выброс при узком распределении — настоящий РЕГРЕСС
     (иначе, например, регресс самого canary-бенча был бы замаскирован).
+
+    Итерация 32: при широком разбросе вердикт уточняется ОТНОШЕНИЯМИ
+    fox/эталон (крейт-медианы; см. шапку модуля). Регресс гонит отношения
+    своего крейта только вверх; дрейф — в обе стороны. Широкий разброс +
+    крейт >= +8% при отсутствии крейтов <= -5% => РЕГРЕСС, замаскированный
+    разбросом. Ограничение: регресс ПОД микроарх. дрейфом (крейты в обе
+    стороны) одним сравнением не разрешается — только повторный прогон.
     """
     import statistics
     last = meta[-1]
@@ -157,6 +208,10 @@ def check_regression(meta, threshold_pct):
     print(f"  распределение дельт: median {med:+.2f}%, p10 {p10:+.2f}%, "
           f"p90 {p90:+.2f}% (разброс {spread:.1f} п.п.)"
           + (f", canary {cdelta:+.2f}%" if cdelta is not None else ""))
+    rmed = crate_ratio_deltas(prev["vals"], last["vals"])
+    if rmed:
+        print("  отношения fox/эталон (крейт-медианы): "
+              + " | ".join(f"{c} {v:+.1f}%" for c, v in sorted(rmed.items())))
     if not regressions:
         note = " (внимание: заметный дрейф скорости — сравнение грубое)" \
                if (cdelta is not None and abs(cdelta) > 3) or spread > 20 else ""
@@ -166,15 +221,45 @@ def check_regression(meta, threshold_pct):
     regressions.sort(reverse=True)
     for delta, name, pv, v in regressions[:15]:
         print(f"  ФЛАГ +{delta:.1f}%  {name}: {pv:.0f} -> {v:.0f}")
+    top_crate = max(rmed, key=rmed.get) if rmed else None
     if spread > 20.0:
+        suppressed = [c for c, v in rmed.items() if v <= RATIO_SUPPRESSED]
+        elevated = top_crate is not None and rmed[top_crate] >= RATIO_ELEVATED
+        span = (max(rmed.values()) - min(rmed.values())) if rmed else 0.0
+        if suppressed:
+            print(f"\n  ИТОГ: ДРЕЙФ СРЕДЫ — разброс дельт {spread:.1f} п.п. широкий, "
+                  f"отношения движутся в ОБЕ стороны ("
+                  + ", ".join(f"{c} {rmed[c]:+.1f}%" for c in suppressed)
+                  + f" — относительно ускорены; span {span:.0f} п.п.) — "
+                  f"разные VM/микроархитектуры пула, не код. "
+                  f"Для точного вердикта — повторный прогон.")
+            return 3
+        if elevated:
+            print(f"\n  ИТОГ: РЕГРЕСС, замаскированный разбросом — отношения "
+                  f"указывают на крейт '{top_crate}' ({rmed[top_crate]:+.1f}%) при "
+                  f"тихих остальных (нет крейтов <= {RATIO_SUPPRESSED:.0f}%) — "
+                  f"движение одностороннее, кодом объяснимо, средой нет. "
+                  f"Разбор {top_crate}.")
+            return 1
         print(f"\n  ИТОГ: ДРЕЙФ СРЕДЫ — разброс дельт {spread:.1f} п.п. широкий, "
               f"сдвиг глобальный (разные VM/микроархитектуры пула), а не "
               f"локализованное изменение кода. Флаги — часть общего "
               f"перетасовки. Для точного вердикта — повторный прогон.")
         return 3
-    print(f"\n  ИТОГ: РЕГРЕСС — {len(regressions)} бенчей(а) выше порога при "
-          f"узком распределении (разброс {spread:.1f} п.п.) — локализованный "
-          f"выброс, требуется разбор кода.")
+    if rmed and top_crate is not None and rmed[top_crate] >= RATIO_ELEVATED:
+        print(f"\n  ИТОГ: РЕГРЕСС — {len(regressions)} бенчей(а) выше порога при "
+              f"узком распределении (разброс {spread:.1f} п.п.); отношения "
+              f"подтверждают крейт '{top_crate}' ({rmed[top_crate]:+.1f}%). "
+              f"Разбор кода.")
+    elif rmed and top_crate is not None:
+        print(f"\n  ИТОГ: РЕГРЕСС — {len(regressions)} бенчей(а) выше порога при "
+              f"узком распределении (разброс {spread:.1f} п.п.); отношения тихие "
+              f"(max {rmed[top_crate]:+.1f}%) — при флагах у ВСЕХ бенчей это "
+              f"похоже на равномерный дрейф скорости; повторный прогон уточнит.")
+    else:
+        print(f"\n  ИТОГ: РЕГРЕСС — {len(regressions)} бенчей(а) выше порога при "
+              f"узком распределении (разброс {spread:.1f} п.п.) — локализованный "
+              f"выброс, требуется разбор кода.")
     return 1
 
 
