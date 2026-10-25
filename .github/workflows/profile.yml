@@ -74,6 +74,58 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Итерация 30: профили снимаются на раннерах пула без классификации,
+      # а доли функций системных кадров гуляют между прогонами (page faults,
+      # realloc: +-5-7 п.п. см. docs/PROFILING.md). Канарейка (те же пороги,
+      # что в bench.yml) делает каждый профиль самоклассифицированным:
+      # сравнивать доли можно только между профилями одного класса раннера.
+      # Запуск ПОСЛЕ perf record — компиляция критерия не искажает профиль.
+      - name: Runner class canary
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          cargo bench -p foxjson --bench json -- \
+            parse/foxjson/session-5000 --output-format bencher \
+            > canary-raw.txt || true
+          python3 - <<'PYEOF'
+          import re
+          try:
+              src = open('canary-raw.txt', encoding='utf-8').read()
+          except FileNotFoundError:
+              print("runner class: UNKNOWN (no canary-raw.txt)"); raise SystemExit
+          # criterion 0.5.1 bencher рвёт строку результата: склейка пар
+          # (как Normalize-шаг bench.yml: только префикс "test NAME ...",
+          # текст ERROR отбрасывается)
+          lines = src.splitlines()
+          out, i = [], 0
+          err_re = re.compile(r'^(test .*? \.\.\.) Criterion\.rs ERROR:')
+          while i < len(lines):
+              m_err = err_re.match(lines[i])
+              if m_err and i + 1 < len(lines):
+                  nxt = lines[i + 1].strip()
+                  if nxt.startswith('bench:'):
+                      out.append(m_err.group(1) + ' ' + nxt); i += 2; continue
+              out.append(lines[i]); i += 1
+          joined = '\n'.join(out)
+          m = re.search(r'^test parse/foxjson/session-5000 \.\.\. bench:\s+(\d+) ns/iter',
+                        joined, re.M)
+          canary = int(m.group(1)) if m else None
+          if canary is None:
+              cls = 'UNKNOWN'
+          elif canary < 900_000:
+              cls = 'FAST'
+          elif canary < 1_200_000:
+              cls = 'MEDIUM'
+          else:
+              cls = 'CLASSIC'
+          print(f"runner class: {cls} (canary={canary})")
+          import os
+          if os.environ.get('GITHUB_STEP_SUMMARY'):
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+                  f.write(f"Runner class: **{cls}** (canary={canary} ns — пороги как в bench.yml)\n")
+          PYEOF
+
       - name: Upload profile artifacts
         if: always()
         uses: actions/upload-artifact@v4
