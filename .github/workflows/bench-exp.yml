@@ -1,0 +1,216 @@
+name: Bench-Experiment
+
+# Итерация 34: переоценка экспериментальных веток на серверном CPU
+# (GitHub Actions runner). В отличие от bench.yml НЕ пишет gh-pages —
+# только артефакты и step summary, чтобы история main не загрязнялась
+# точками с экспериментальным кодом. Два job: исследуемый ref (тот,
+# откуда запущен dispatch) и main — парный контроль на серверном CPU.
+# Сравнение между runner'ами — только через внутри-прогонные отношения
+# fox/эталон (иммунны к классу железа; см. docs/PROFILING.md, итерация 32).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench-exp:
+    name: criterion bench (experiment ref)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # ref = тот, с кем вызван workflow_dispatch
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run benchmarks
+        shell: bash
+        run: |
+          set -o pipefail
+          # --benches: только criterion-бенчи (см. комментарий в bench.yml)
+          cargo bench --workspace --benches -- --output-format bencher | tee bench-output.txt
+
+      # Холодный кэш раннера: criterion 0.5.1 в bencher-режиме рвёт строку
+      # результата надвое (см. bench.yml, итерация 26). Склеиваем и
+      # проверяем формат жёстко.
+      - name: Normalize criterion output (rejoin split bencher lines)
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PYEOF'
+          import re, sys
+          try:
+              src = open('bench-output.txt', encoding='utf-8').read().splitlines()
+          except FileNotFoundError:
+              print("no bench-output.txt (bench step failed earlier)"); sys.exit(0)
+          err_re = re.compile(r'^(test .*? \.\.\.) Criterion\.rs ERROR:')
+          out, i, joined = [], 0, 0
+          while i < len(src):
+              m = err_re.match(src[i])
+              if m and i + 1 < len(src) and re.match(r'^\s*bench:', src[i + 1]):
+                  out.append(f"{m.group(1)} {src[i + 1].strip()}")
+                  joined += 1; i += 2
+              else:
+                  out.append(src[i]); i += 1
+          open('bench-output.txt', 'w', encoding='utf-8').write('\n'.join(out) + '\n')
+          print(f"joined {joined} split criterion lines")
+          PYEOF
+
+      - name: Verify parser-compatible output
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PYEOF'
+          import re, sys
+          src = open('bench-output.txt', encoding='utf-8').read()
+          n = len(re.findall(
+              r'^test .*? \.\.\. bench:\s+-?\d+(?:\.\d+)? ns/iter \(\+/- -?\d+(?:\.\d+)?\)',
+              src, re.M))
+          print(f"parser-compatible bench lines: {n}")
+          if n == 0:
+              sys.exit("FAIL: 0 parser-compatible bench lines")
+          PYEOF
+
+      - name: Runner class canary
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PYEOF'
+          import re
+          try:
+              src = open('bench-output.txt', encoding='utf-8').read()
+          except FileNotFoundError:
+              print("runner class: UNKNOWN (no bench-output.txt)"); raise SystemExit
+          def val(name):
+              m = re.search(rf'^test {re.escape(name)} \.\.\. bench:\s+(\d+) ns/iter', src, re.M)
+              return int(m.group(1)) if m else None
+          canary = val('parse/foxjson/session-5000') or val('find/foxsearch/zzz-absent-zzz')
+          if canary is None:
+              cls = 'UNKNOWN'
+          elif canary < 900_000:
+              cls = 'FAST'
+          elif canary < 1_200_000:
+              cls = 'MEDIUM'
+          else:
+              cls = 'CLASSIC'
+          print(f"runner class: {cls} (canary={canary})")
+          PYEOF
+
+      - name: Benchmark summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Bench-Experiment results (ref: $GITHUB_SHA)"
+            echo '```text'
+            grep -E "^(test )?.*bench:" bench-output.txt || cat bench-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bench output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-output-exp
+          path: bench-output.txt
+
+  bench-main:
+    name: criterion bench (main, paired control)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run benchmarks
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo bench --workspace --benches -- --output-format bencher | tee bench-output.txt
+
+      - name: Normalize criterion output (rejoin split bencher lines)
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PYEOF'
+          import re, sys
+          try:
+              src = open('bench-output.txt', encoding='utf-8').read().splitlines()
+          except FileNotFoundError:
+              print("no bench-output.txt (bench step failed earlier)"); sys.exit(0)
+          err_re = re.compile(r'^(test .*? \.\.\.) Criterion\.rs ERROR:')
+          out, i, joined = [], 0, 0
+          while i < len(src):
+              m = err_re.match(src[i])
+              if m and i + 1 < len(src) and re.match(r'^\s*bench:', src[i + 1]):
+                  out.append(f"{m.group(1)} {src[i + 1].strip()}")
+                  joined += 1; i += 2
+              else:
+                  out.append(src[i]); i += 1
+          open('bench-output.txt', 'w', encoding='utf-8').write('\n'.join(out) + '\n')
+          print(f"joined {joined} split criterion lines")
+          PYEOF
+
+      - name: Verify parser-compatible output
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PYEOF'
+          import re, sys
+          src = open('bench-output.txt', encoding='utf-8').read()
+          n = len(re.findall(
+              r'^test .*? \.\.\. bench:\s+-?\d+(?:\.\d+)? ns/iter \(\+/- -?\d+(?:\.\d+)?\)',
+              src, re.M))
+          print(f"parser-compatible bench lines: {n}")
+          if n == 0:
+              sys.exit("FAIL: 0 parser-compatible bench lines")
+          PYEOF
+
+      - name: Runner class canary
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PYEOF'
+          import re
+          try:
+              src = open('bench-output.txt', encoding='utf-8').read()
+          except FileNotFoundError:
+              print("runner class: UNKNOWN (no bench-output.txt)"); raise SystemExit
+          def val(name):
+              m = re.search(rf'^test {re.escape(name)} \.\.\. bench:\s+(\d+) ns/iter', src, re.M)
+              return int(m.group(1)) if m else None
+          canary = val('parse/foxjson/session-5000') or val('find/foxsearch/zzz-absent-zzz')
+          if canary is None:
+              cls = 'UNKNOWN'
+          elif canary < 900_000:
+              cls = 'FAST'
+          elif canary < 1_200_000:
+              cls = 'MEDIUM'
+          else:
+              cls = 'CLASSIC'
+          print(f"runner class: {cls} (canary={canary})")
+          PYEOF
+
+      - name: Benchmark summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Bench-Experiment results (ref: main)"
+            echo '```text'
+            grep -E "^(test )?.*bench:" bench-output.txt || cat bench-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bench output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-output-main
+          path: bench-output.txt
