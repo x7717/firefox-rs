@@ -3,7 +3,7 @@
 
 Роли: (1) парс dataNNN.js, (2) класс + пара последней записи, (3) пять значений
 полной точности двумя формулами (fp dual-formula), (4) флаги/нули/реестр,
-(5) ночные дубли schedule (белый список 7), (6) GUARD-сверка кандидата.
+(5) ночные дубли schedule (белый список 8), (6) GUARD-сверка кандидата.
 Запуск: python3 scripts/analyze.py [data214.js]
 """
 import json
@@ -15,8 +15,13 @@ from pathlib import Path
 CANARY = "parse/foxjson/session-5000"
 CANARY_FALLBACK = "find/foxsearch/zzz-absent-zzz"
 FAST_T, CLASSIC_T = 900_000, 1_200_000
+# 87d7d86 — 8-й ночной дубли schedule (окно 228): bench.yml cron "0 4 * * *"
+# UTC отложен GitHub на 6ч39м (run 41042399453, event=schedule, создан
+# 10:39:54Z, bench 10:40:04-10:55:06, Store->711d5bf), атрибуция записи =
+# main-тип на момент Store (87d7d861, push 10:42:50) => idx 231 [FAST 759538]
+# против настоящего idx 233 [CLASSIC 1363807] — класс-конфликт FAST/CLASSIC.
 WHITELIST_DUPES = {"336e9ff", "415fe95", "2b6489b", "6a239dc",
-                   "76d4050", "68e6dd4", "ff7b23e"}
+                   "76d4050", "68e6dd4", "ff7b23e", "87d7d86"}
 PAIR_RULES = [("/foxjson/", "/serde_json/"), ("/foxurl/", "/url_crate/"),
               ("/foxsearch/", "/std/")]
 
@@ -51,7 +56,7 @@ def main(path):
     cc = Counter(m["cid"] for m in meta)
     dupes = {c: n for c, n in cc.items() if n > 1}
     print(f"коммитов-дублей: {len(dupes)} {sorted(dupes)}")
-    print(f"  белый список 7: {'СОВПАДАЕТ' if set(dupes) == WHITELIST_DUPES else 'РАСХОЖДЕНИЕ!'}")
+    print(f"  белый список 8: {'СОВПАДАЕТ' if set(dupes) == WHITELIST_DUPES else 'РАСХОЖДЕНИЕ!'}")
     print(f"  точек (уникальных коммитов): {len(cc)}")
 
     last = meta[-1]

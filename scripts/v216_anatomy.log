@@ -1,0 +1,7 @@
+якорь d70534f canary=1356121, точка 87d7d86 canary=1363807
+canary-vs-якорь: 0.566763585255298 -> +0.57%
+n=75: median 0.32589532171032715, p10 -10.609480812641085, p90 20.833333333333336, spread 31.44281414597442 -> 31.4 п.п.
+пробоев (>20%): 9; нулей: 1 ['serialize/foxurl/3']
+min 4 против якоря: classifier/naive-std/8 -19.8; parse/url_crate/12 -14.6; classifier/naive-std/32 -13.8; classifier/naive-fox/32 -13.7
+top 5 против якоря: parse/foxurl/4 +24.7; parse/foxurl/11 +25.0; find/std/https://example.com/search?q=firefox+rust&lang=ru +25.5; parse/foxurl/10 +26.5; parse/foxurl/2 +27.4
+ОТНОШЕНИЯ против якоря: foxjson +0.94 | foxsearch -2.15 | foxurl +32.34
