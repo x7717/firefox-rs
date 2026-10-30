@@ -17,3 +17,6 @@
 - Окно 217: 09:30 trigger trace 4e050d13-acc1-44a4-aca8-9d2ebcb37920-cron-
   agent-loop-202610300930 — исполнено (снапшот-откат #20-класса, ff-only
   97e1e53->f9f0078, пятипак 5/5, пре-рег 7/7, push docs: iteration 217)
+- Окно 218: 10:00 trigger trace 8fab3c8e-c41b-4ab9-bb5b-304e10919577-cron-
+  agent-loop-202610301001 — исполнено (БЕЗ отката снапшота — первый;
+  пятипак 5/5, пре-рег 7/7, push docs: iteration 218)

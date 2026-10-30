@@ -1,0 +1,35 @@
+записей в истории: 218
+коммитов-дублей: 7 ['2b6489b', '336e9ff', '415fe95', '68e6dd4', '6a239dc', '76d4050', 'ff7b23e']
+  белый список 7: СОВПАДАЕТ
+  точек (уникальных коммитов): 211
+
+последняя запись: idx 217 5673db9 [CLASSIC] canary=1219985
+пара (GUARD): 5673db9 [CLASSIC] vs f9f0078 [CLASSIC] idx 217 vs 216, distance 1, between=NOTHING between
+
+сравнимых бенчей: n=75
+МЕДИАНА: -10.013085143420252 (f2 -10.013085143420252, |diff| 0.000e+00)
+  rank: [37] соседи -10.344827586206897 / -9.876543209876543
+P10: -17.65536723163842 (f2 -17.65536723163842)
+P90: 50.59487418752816 (f2 50.59487418752815)
+SPREAD: 68.25024141916658 -> 68.3 п.п. (f2 68.25024141916657)
+CANARY-vs-ПАРА: -10.013085143420252 -> -10.01% (f2 -10.013085143420252) (cur 1219985 vs пара 1355736)
+НУЛИ: 0
+FP DUAL-FORMULA max |f1-f2|: 1.4210854715202004e-14 (worst multi/foxsearch-multi/2)
+
+ФЛАГИ (>20%): 12
+  ФЛАГ +67.1%  find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru: 320798 -> 535902  (микро=False)
+  ФЛАГ +66.7%  multi/naive-fox/4: 1064450 -> 1773923  (микро=False)
+  ФЛАГ +61.4%  find/foxsearch/zzz-absent-zzz: 207622 -> 335095  (микро=False)
+  ФЛАГ +61.1%  find/foxsearch/Mozilla Corporation: 208250 -> 335580  (микро=False)
+  ФЛАГ +60.6%  multi/naive-fox/2: 416813 -> 669545  (микро=False)
+  ФЛАГ +58.5%  find/foxsearch/горячие пути: 211215 -> 334801  (микро=False)
+  ФЛАГ +54.2%  multi/naive-fox/8: 2527896 -> 3897771  (микро=False)
+  ФЛАГ +50.6%  multi/foxsearch-multi/2: 248624 -> 374415  (микро=False)
+  ФЛАГ +28.6%  multi/naive-std/2: 1577990 -> 2029929  (микро=False)
+  ФЛАГ +25.5%  multi/naive-std/4: 3240807 -> 4066204  (микро=False)
+  ФЛАГ +25.4%  multi/naive-std/8: 7819254 -> 9805564  (микро=False)
+  ФЛАГ +23.8%  find/std/zzz-absent-zzz: 1030351 -> 1275669  (микро=False)
+ОТНОШЕНИЯ (крейт-медианы): foxjson -13.4% | foxsearch +38.9% | foxurl -3.8%   exact: foxjson=-13.430207915491387 foxsearch=38.90843825189093 foxurl=-3.799264086536336
+suppressed: ['foxjson'], top foxsearch +38.91, span 52.338646167382315 -> 52
+ПРОГНОЗ ВЕРДИКТА: ДРЕЙФ СРЕДЫ exit 3 (suppressed НЕ пуст: foxjson)
+РЕЕСТР-КАНДИДАТ: median НЕ материализуется
