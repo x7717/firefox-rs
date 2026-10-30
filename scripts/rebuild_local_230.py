@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""rebuild_local_230.py — восстановление хвоста локального worklog (214-229)
-condensировано из repo WORKLOG.md (после СНАПШОТ-ОТКАТА #28, эра 213),
+"""rebuild_local_230.py — восстановление хвоста локального worklog (214-230)
+condensировано из repo WORKLOG.md (после СНАПШОТ-ОТКАТА #29, эра 213),
 затем_APPEND_окно 230 (пре-регистрация будет дописана отдельно)."""
 import re
 from pathlib import Path
@@ -15,9 +15,9 @@ lines = raw.splitlines()
 idx = []
 for i, ln in enumerate(lines):
     m = re.match(r"^## 2026-10-\d+, Окно (\d+) ", ln)
-    if m and 214 <= int(m.group(1)) <= 228:
+    if m and 214 <= int(m.group(1)) <= 230:
         idx.append((int(m.group(1)), i))
-assert len(idx) == 15, f"ожидалось 15 окон 214-228, найдено {len(idx)}"
+assert len(idx) == 16, f"ожидалось 16 окон 214-230, найдено {len(idx)}"
 
 out = []
 out.append("<!-- REBUILD после СНАПШОТ-ОТКАТА #28 (старт 01:30-сессии окна 230):")
