@@ -72,6 +72,23 @@ def main(path):
           f"[{prev['cls']}] idx {li} vs {pi}, distance {li - pi}, "
           f"between={between or 'NOTHING between'}")
 
+    def prof(x):
+        # дискриминатор гетерогенности пула (окно 229): parse/foxurl/11 ÷ canary;
+        # OLD <6.0e-05 <= NEW (OLD-коридор 5.57-5.91e-05, NEW 6.55-7.65e-05)
+        v11 = x["vals"].get("parse/foxurl/11")
+        if not (v11 and x["canary"]):
+            return None, None
+        p = v11 / x["canary"]
+        return p, ("OLD" if p < 6.0e-05 else "NEW")
+
+    pl_, tl_ = prof(last)
+    pp_, tp_ = prof(prev)
+    same = (tl_ is not None and tl_ == tp_)
+    print(f"  профиль v11/canary: {last['cid']} {pl_:.4e} [{tl_}] / "
+          f"{prev['cid']} {pp_:.4e} [{tp_}] — "
+          f"{'SAME-PROFILE' if same else 'CROSS-PROFILE'} "
+          f"(дискриминатор окна 229, порог 6.0e-05)")
+
     lv, pv = last["vals"], prev["vals"]
     d1, d2, names = [], [], []
     for name, v in lv.items():
