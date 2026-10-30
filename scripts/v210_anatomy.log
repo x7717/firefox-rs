@@ -1,0 +1,7 @@
+якорь d70534f canary=1356121, точка eed55d1 canary=1368414
+canary-vs-якорь: 0.9064825336382226 -> +0.91%
+n=75: median 0.7203884525578433, p10 -0.4132231404958678, p90 3.076923076923077, spread 3.490146217418945 -> 3.5 п.п.
+пробоев (>20%): 0; нулей: 4 ['parse/foxjson/small', 'parse/url_crate/1', 'serialize/foxurl/3', 'serialize/foxurl/5']
+min 4 против якоря: serialize/foxurl/6 -13.2; serialize/foxurl/dirty-all -5.2; serialize/foxurl/1 -2.3; classifier/naive-fox/8 -1.7
+top 5 против якоря: serialize/foxurl/2 +3.6; parse/foxurl/2 +4.1; parse/foxurl/10 +4.4; canonical/foxurl/dirty-all +5.4; parse/foxurl/6 +8.2
+ОТНОШЕНИЯ против якоря: foxjson -0.45 | foxsearch +1.11 | foxurl +2.08

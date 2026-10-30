@@ -1,0 +1,35 @@
+записей в истории: 222
+коммитов-дублей: 7 ['2b6489b', '336e9ff', '415fe95', '68e6dd4', '6a239dc', '76d4050', 'ff7b23e']
+  белый список 7: СОВПАДАЕТ
+  точек (уникальных коммитов): 215
+
+последняя запись: idx 221 eed55d1 [CLASSIC] canary=1368414
+пара (GUARD): eed55d1 [CLASSIC] vs 5673db9 [CLASSIC] idx 221 vs 217, distance 4, between=['0eaa64b', '0b03f3f', 'a41eeab']
+
+сравнимых бенчей: n=75
+МЕДИАНА: 11.683599419448477 (f2 11.683599419448477, |diff| 0.000e+00)
+  rank: [37] соседи 10.44776119402985 / 12.166461063045857
+P10: -33.689088311098644 (f2 -33.689088311098644)
+P90: 22.8643216080402 (f2 22.864321608040193)
+SPREAD: 56.55340991913884 -> 56.6 п.п. (f2 56.553409919138836)
+CANARY-vs-ПАРА: 12.166461063045857 -> +12.17% (f2 12.166461063045864) (cur 1368414 vs пара 1219985)
+НУЛИ: 0
+FP DUAL-FORMULA max |f1-f2|: 1.4210854715202004e-14 (worst canonical/foxurl/dirty-all)
+
+ФЛАГИ (>20%): 12
+  ФЛАГ +33.3%  serialize/foxurl/3: 3 -> 4  (микро=True)
+  ФЛАГ +29.3%  parse/foxurl/6: 41 -> 53  (микро=True)
+  ФЛАГ +24.6%  parse/foxurl/10: 57 -> 71  (микро=True)
+  ФЛАГ +24.3%  parse/foxurl/9: 70 -> 87  (микро=True)
+  ФЛАГ +24.2%  parse/foxurl/3: 62 -> 77  (микро=True)
+  ФЛАГ +23.4%  classifier/foxsearch-multi/8: 6944 -> 8568  (микро=False)
+  ФЛАГ +23.3%  canonical/foxurl/corpus-all: 1166 -> 1438  (микро=False)
+  ФЛАГ +22.9%  parse/url_crate/12: 398 -> 489  (микро=False)
+  ФЛАГ +22.2%  parse/foxurl/corpus-all: 973 -> 1189  (микро=False)
+  ФЛАГ +21.6%  parse/url_crate/0: 255 -> 310  (микро=False)
+  ФЛАГ +21.3%  parse/foxurl/8: 75 -> 91  (микро=True)
+  ФЛАГ +21.2%  parse/foxjson/small: 118 -> 143  (микро=True)
+ОТНОШЕНИЯ (крейт-медианы): foxjson +18.9% | foxsearch -27.4% | foxurl +6.5%   exact: foxjson=18.903339899401097 foxsearch=-27.4161957541331 foxurl=6.543036346774178
+suppressed: ['foxsearch'], top foxjson +18.90, span 46.319535653534196 -> 46
+ПРОГНОЗ ВЕРДИКТА: ДРЕЙФ СРЕДЫ exit 3 (suppressed НЕ пуст: foxsearch)
+РЕЕСТР-КАНДИДАТ: median НЕ материализуется
