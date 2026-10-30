@@ -1,0 +1,7 @@
+якорь d70534f canary=1356121, точка 2f2d0d1 canary=1126905
+canary-vs-якорь: -16.90232656230528 -> -16.90%
+n=75: median -15.369019815919376, p10 -27.058823529411764, p90 31.50241030535882, spread 58.56123383477058 -> 58.6 п.п.
+пробоев (>20%): 9; нулей: 0 []
+min 4 против якоря: classifier/foxsearch-multi/8 -33.9; serialize/foxurl/1 -31.3; parse/foxurl/corpus-all -30.8; classifier/foxsearch-multi/32 -30.2
+top 5 против якоря: find/foxsearch/Mozilla Corporation +49.4; find/foxsearch/горячие пути +52.2; multi/naive-fox/4 +59.6; find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru +61.2; find/foxsearch/zzz-absent-zzz +64.3
+ОТНОШЕНИЯ против якоря: foxjson -15.07 | foxsearch +42.86 | foxurl -5.95
