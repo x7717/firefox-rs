@@ -1,0 +1,17 @@
+n=75 (int(n*0.10)=7, int(n*0.90)=67)
+p10 deltas[7] = -8.771929824561402
+  соседи deltas[6]=-9.090909090909092 / deltas[8]=-8.754208754208754
+p90 deltas[67] = -2.7509444077657372
+  соседи deltas[66]=-3.069316881242847 / deltas[68]=-2.307607214968214
+median rank[37] = -5.956112852664576, соседи rank[36]=-6.0 / rank[38]=-5.942085374060486
+parse/foxurl/corpus-all: last=743 pair=791
+find/foxsearch/zzz-absent-zzz: last=351452 pair=355810
+parse/foxurl/11: last=52 pair=57
+corpus-all дельта: -6.06826801517067 -> -6.07%
+профиль точный: 5.5399419158397596e-05 = 52/938638 [OLD]
+foxsearch zzz: 351452 (ПАТОЛОГИЧЕСКИЙ >=300k)
+последние 8 MEDIUM canary: 955d2d5 1063803[NEW], 5d676f2 909207[OLD], 6241266 936463[OLD], c65f845 1070244[NEW], b760fe9 1186209[OLD], 45afa12 1068947[NEW], e24e80f 992228[OLD], 9da4f3e 938638[OLD]
+OLD-MEDIUM записей: 12; последние 5: idx229 5d676f2 909207, idx245 6241266 936463, idx248 b760fe9 1186209, idx263 e24e80f 992228, idx264 9da4f3e 938638
+OLD-MEDIUM canary кластер: 909207-1186209, медиана 1044004.5
+canary 9da4f3e 938638 INSIDE OLD-кластера: True
+НУЛИ пары: 1 ['serialize/foxurl/3']
