@@ -1,0 +1,31 @@
+=== ПАРА bc328fa (idx 256) vs 7de3903 (idx 251) ===
+n=75 median=0.0 p10=-2.272727272727273 p90=3.75
+spread=6.022727272727273 canary-vs-пара=-0.2979446119718554 (cur 719126 vs 721275)
+fp max |f1-f2|=1.1102230246251565e-14 (worst find/foxsearch/Mozilla Corporation)
+НУЛИ 15: parse/foxurl/0, parse/foxurl/1, parse/foxurl/2, parse/foxurl/5, parse/foxurl/6, parse/foxurl/7, parse/foxurl/9, parse/foxurl/11, parse/foxurl/12, parse/url_crate/12, serialize/foxurl/0, serialize/foxurl/1, serialize/foxurl/2, serialize/foxurl/3, serialize/foxurl/5
+
+=== ВАРИАНТ-ПАРА bc328fa (idx 256) vs 6259040 (idx 244) ===
+n=75 median=-5.131064311479426 p10=-7.5 p90=0.947935368043088
+spread=8.447935368043089 -> 8.4 п.п.
+canary-vs=-5.099324726466051 -> -5.10% (cur 719126 vs 757767)
+
+=== find/foxsearch/zzz-absent-zzz конверт по ВСЕМ FAST-записям ===
+FAST записей с zzz: 64; нормальных (<300k): 56, патологических (>=300k, 3-й хост): 8
+нормальный конверт: min 108773 (336e9ff), max 159730 (6259040), span 1.4684710360107747
+bc328fa zzz 148698 rank в нормальном конверте: 55/56
+7de3903 zzz 109022 rank: 2/56
+медиана нормального конверта: 118875.0
+bc328fa vs медиана: 25.08769716088328%
+7de3903 vs медиана: -8.288538380651946%
+
+=== corpus-all FAST-записи (последние) ===
+запись 242 a383f78 canary=894329 corpus-all=703
+запись 245 6259040 canary=757767 corpus-all=575
+запись 252 7de3903 canary=721275 corpus-all=573
+запись 257 bc328fa canary=719126 corpus-all=569
+СЧЁТЧИК: bc328fa 569 vs 7de3903 573 = -0.6980802792321117%
+
+=== профиль exact (parse/foxurl/11 / canary) ===
+bc328fa: 40/719126 = 5.5623075789221916e-05
+7de3903: 40/721275 = 5.5457349831894906e-05
+6259040: 43/757767 = 5.674567512177226e-05
