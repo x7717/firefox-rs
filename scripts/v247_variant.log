@@ -1,0 +1,28 @@
+=== ПАРА bda5d20 (idx 267) vs 382423d (idx 266) ===
+n=75 median=0.04634636181059787 p10=-1.2244897959183674 p90=1.3585712105022134
+spread=2.583061006420581 canary-vs-пара=-0.41401362721449575 (cur 1356634 vs 1362274)
+НУЛИ 12: parse/foxurl/2, parse/foxurl/3, parse/foxurl/4, parse/foxurl/6, parse/foxurl/8, parse/foxurl/9, parse/foxurl/10, serialize/foxurl/0, serialize/foxurl/2, serialize/foxurl/3, serialize/foxurl/4, serialize/foxurl/5
+fp max |f1-f2|=1.0942635686461699e-14 (worst find/std/Mozilla Corporation)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 2.5830610064206 INSIDE: True
+
+=== ВАРИАНТ-ПАРА bda5d20 vs f3a9631 (idx 259) ===
+n=75 median=0.0 p10=-0.8287292817679558 p90=1.205699671172817
+spread=2.0344289529407726 canary-vs-пара=-0.15007290201542242 (cur 1356634 vs 1358673)
+НУЛИ 15: parse/url_crate/1, parse/foxurl/2, parse/foxurl/3, parse/foxurl/4, parse/foxurl/5, parse/foxurl/6, parse/foxurl/7, parse/foxurl/8, parse/foxurl/9, parse/url_crate/9, parse/foxurl/10, parse/foxurl/12, serialize/foxurl/2, serialize/foxurl/3, serialize/foxurl/4
+fp max |f1-f2|=1.1102230246251565e-14 (worst canonical/foxurl/dirty-all)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 2.0344289529408 INSIDE: False
+
+canary-vs-CLASSIC-якорь d70534f (1356121): 0.03782848285661825 -> +0.04%
+
+профиль exact bda5d20: 5.675812341427386e-05 = 77/1356634
+OLD-коридор 5.25-5.91e-05: INSIDE True; NEW-порог 6.55e-05: False
+профиль пары 382423d: 5.725720376370686e-05 — SAME-PROFILE Δ -0.8716463896711456%
+
+=== corpus-all (parse/foxurl) CLASSIC-записей (последние 10) ===
+b754ee8 1186, 6cc807d 1186, bca9f03 938, f3a9631 1184, f3a9631 1181, f27086a 1189, 763e4a5 1190, 1d15e19 1189, 382423d 1184, bda5d20 1183
+bda5d20 corpus-all: 1183
+
+=== find/foxsearch/zzz-absent-zzz конверт по CLASSIC-записям ===
+CLASSIC записей с zzz: 152; нормальных (<300k): 138, патологических (>=300k): 14
+нормальный конверт: min 203811, max 231085, медиана 207058.0
+bda5d20 zzz 207368 rank: 77/138 (vs медиана 0.14971650455427948%)
