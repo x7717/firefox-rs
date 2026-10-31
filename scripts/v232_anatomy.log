@@ -1,0 +1,7 @@
+якорь d70534f canary=1356121, точка 7de3903 canary=721275
+canary-vs-якорь: -46.813374322792725 -> -46.81%
+n=75: median -50.0, p10 -56.708860759493675, p90 -41.712414930001586, spread 14.996445829492089 -> 15.0 п.п.
+пробоев (>20%): 0; нулей: 0 []
+min 4 против якоря: classifier/naive-std/8 -62.0; parse/url_crate/4 -57.8; parse/url_crate/0 -57.8; parse/url_crate/7 -57.8
+top 5 против якоря: parse/serde_json/session-5000 -40.8; parse/serde_json/nums-5000 -40.5; multi/foxsearch-multi/2 -38.8; parse/serde_json/strs-5000 -38.1; parse/serde_json/small -36.6
+ОТНОШЕНИЯ против якоря: foxjson -12.93 | foxsearch -0.22 | foxurl +15.54
