@@ -1,0 +1,37 @@
+=== ПАРА (GUARD) e24e80f (idx 263) vs 45afa12 (idx 252) ===
+n=75 median=1.8292682926829267 p10=-25.423728813559322 p90=71.74977854840377
+spread=97.17350736196309 canary-vs-пара=-7.1770630349306375 (cur 992228 vs 1068947)
+НУЛИ 3: parse/url_crate/5, serialize/foxurl/5, serialize/foxurl/6
+ФЛАГОВ 29: classifier/foxsearch-multi/8 -26.4, classifier/naive-std/8 +31.7, classifier/naive-std/32 +34.6, multi/foxsearch-multi/2 +84.2, multi/naive-fox/2 +97.8, multi/naive-std/2 +21.8, multi/foxsearch-multi/4 +25.5, multi/naive-fox/4 +90.5, multi/naive-std/4 +20.1, multi/naive-fox/8 +71.7, multi/naive-std/8 +22.5, find/foxsearch/Mozilla Corporation +97.8, find/foxsearch/горячие пути +97.2, find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru +85.7, find/foxsearch/zzz-absent-zzz +99.0, find/std/zzz-absent-zzz +42.6, parse/foxurl/0 -25.4, parse/foxurl/1 -24.1, parse/foxurl/2 -27.8, parse/foxurl/3 -24.6, parse/foxurl/4 -29.6, parse/foxurl/5 -22.5, parse/foxurl/9 -21.1, parse/foxurl/10 -32.4, parse/foxurl/11 -26.0, parse/foxurl/12 -22.0, parse/foxurl/13 -26.9, parse/foxurl/corpus-all -20.9, serialize/foxurl/3 -33.3
+fp max |f1-f2|=1.4210854715202004e-14 (worst multi/naive-fox/2)
+профили: cur OLD 5.7446e-05 / prev NEW 7.2034e-05 -> CROSS-PROFILE
+
+=== ВАРИАНТ-ПАРА e24e80f vs b760fe9 (idx 248) ===
+n=75 median=-16.144111078409306 p10=-22.484676334280163 p90=-4.807692307692308
+spread=17.676984026587853 canary-vs-пара=-16.353020420516113 (cur 992228 vs 1186209)
+НУЛИ 0: нет
+ФЛАГОВ 9: parse/serde_json/nums-5000 -23.5, classifier/foxsearch-multi/8 -22.5, classifier/naive-std/32 -22.7, parse/foxurl/12 -20.7, parse/foxurl/13 -24.6, serialize/foxurl/2 -23.1, serialize/foxurl/3 -33.3, serialize/foxurl/4 -25.4, serialize/foxurl/5 -25.0
+fp max |f1-f2|=9.270362255620057e-15 (worst multi/naive-fox/4)
+профили: cur OLD 5.7446e-05 / prev OLD 5.8169e-05 -> SAME-PROFILE
+
+=== пул MEDIUM (OLD/NEW профили) ===
+MEDIUM записей: 50; OLD-профиль: 11, NEW-профиль: 39
+OLD-MEDIUM (все): idx9 a8ab2dc 1026152, idx23 336e9ff 1058566, idx38 7a36458 1183158, idx58 71bdb74 1116381, idx99 bdbfed2 1179276, idx143 43f3373 1029443, idx222 2f2d0d1 1126905, idx229 5d676f2 909207, idx245 6241266 936463, idx248 b760fe9 1186209, idx263 e24e80f 992228
+OLD canary кластер: 909207-1186209 (медиана 1058566)
+NEW canary кластер: 1029289-1121161 (медиана 1067494)
+e24e80f canary 992228 INSIDE OLD-кластера: True
+
+=== corpus-all (parse/foxurl) MEDIUM по профилям ===
+OLD corpus-all кластер: 597-947 (медиана 822)
+NEW corpus-all кластер: 825-1152 (медиана 996)
+e24e80f corpus-all 791 INSIDE OLD-кластера: True
+
+=== find/foxsearch/zzz-absent-zzz MEDIUM по профилям ===
+OLD zzz кластер: 115826-355810 (медиана 316117)
+NEW zzz кластер: 178125-302820 (медиана 178696)
+e24e80f zzz 355810 rank OLD-кластера: 11/11
+vs OLD-медиана: 12.556426892574585%
+
+профиль exact e24e80f: 5.744647399589611e-05 = 57/992228
+OLD-коридор 5.25-5.91e-05: INSIDE True
+профиль варианта b760fe9: 5.816850150352931e-05 — Δ -1.2412688808725767%

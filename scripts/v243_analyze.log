@@ -1,0 +1,39 @@
+записей в истории: 264
+коммитов-дублей: 9 ['2b6489b', '336e9ff', '415fe95', '68e6dd4', '6a239dc', '76d4050', '87d7d86', 'f3a9631', 'ff7b23e']
+  белый список 8: СОВПАДАЕТ
+  точек (уникальных коммитов): 255
+
+последняя запись: idx 263 e24e80f [MEDIUM] canary=992228
+пара (GUARD): e24e80f [MEDIUM] vs 45afa12 [MEDIUM] idx 263 vs 252, distance 11, between=['ebf9480', 'b754ee8', '6cc807d', 'bc328fa', 'bca9f03', 'f3a9631', 'f3a9631', 'f27086a', '289a974', '763e4a5']
+  профиль v11/canary: e24e80f 5.7446e-05 [OLD] / 45afa12 7.2034e-05 [NEW] — CROSS-PROFILE (дискриминатор окна 229, порог 6.0e-05)
+
+сравнимых бенчей: n=75
+МЕДИАНА: 1.8292682926829267 (f2 1.8292682926829285, |diff| 1.776e-15)
+  rank: [37] соседи 1.6491754122938531 / 1.858736059479554
+P10: -25.423728813559322 (f2 -25.423728813559322)
+P90: 71.74977854840377 (f2 71.74977854840377)
+SPREAD: 97.17350736196309 -> 97.2 п.п. (f2 97.17350736196309)
+CANARY-vs-ПАРА: -7.1770630349306375 -> -7.18% (f2 -7.177063034930642) (cur 992228 vs пара 1068947)
+НУЛИ: 3
+FP DUAL-FORMULA max |f1-f2|: 1.4210854715202004e-14 (worst multi/naive-fox/2)
+
+ФЛАГИ (>20%): 15
+  ФЛАГ +99.0%  find/foxsearch/zzz-absent-zzz: 178784 -> 355810  (микро=False)
+  ФЛАГ +97.8%  find/foxsearch/Mozilla Corporation: 178701 -> 353526  (микро=False)
+  ФЛАГ +97.8%  multi/naive-fox/2: 357148 -> 706350  (микро=False)
+  ФЛАГ +97.2%  find/foxsearch/горячие пути: 179050 -> 353022  (микро=False)
+  ФЛАГ +90.5%  multi/naive-fox/4: 874663 -> 1665836  (микро=False)
+  ФЛАГ +85.7%  find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru: 259960 -> 482652  (микро=False)
+  ФЛАГ +84.2%  multi/foxsearch-multi/2: 193187 -> 355841  (микро=False)
+  ФЛАГ +71.7%  multi/naive-fox/8: 2042207 -> 3507486  (микро=False)
+  ФЛАГ +42.6%  find/std/zzz-absent-zzz: 814978 -> 1161987  (микро=False)
+  ФЛАГ +34.6%  classifier/naive-std/32: 310400 -> 417725  (микро=False)
+  ФЛАГ +31.7%  classifier/naive-std/8: 46554 -> 61317  (микро=False)
+  ФЛАГ +25.5%  multi/foxsearch-multi/4: 509474 -> 639298  (микро=False)
+  ФЛАГ +22.5%  multi/naive-std/8: 6497665 -> 7959336  (микро=False)
+  ФЛАГ +21.8%  multi/naive-std/2: 1322698 -> 1611592  (микро=False)
+  ФЛАГ +20.1%  multi/naive-std/4: 2699779 -> 3241840  (микро=False)
+ОТНОШЕНИЯ (крейт-медианы): foxjson -16.5% | foxsearch +70.0% | foxurl -25.7%   exact: foxjson=-16.525511604120645 foxsearch=70.04869056112061 foxurl=-25.68146751242929
+suppressed: ['foxjson', 'foxurl'], top foxsearch +70.05, span 95.7301580735499 -> 96
+ПРОГНОЗ ВЕРДИКТА: ДРЕЙФ СРЕДЫ exit 3 (suppressed НЕ пуст: foxjson, foxurl)
+РЕЕСТР-КАНДИДАТ: median НЕ материализуется
