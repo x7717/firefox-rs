@@ -1,0 +1,33 @@
+=== САМОПАРА-ДУБЛЬ f3a9631 copy2 (idx 259) vs copy1 (idx 258) ===
+copy1 date=1793442130635 copy2 date=1793442756451
+n=75 median=0.0 p10=-1.4492753623188406 p90=1.2656548232676348
+spread=2.7149301855864754 canary-vs=0.2802470484383811 (cur 1358673 vs 1354876)
+fp max |f1-f2|=1.1102230246251565e-14 (worst parse/url_crate/13)
+НУЛИ 8: parse/url_crate/0, parse/foxurl/2, parse/foxurl/3, parse/foxurl/4, parse/foxurl/6, parse/foxurl/9, serialize/foxurl/1, serialize/foxurl/3
+MAX |delta| по всем 75: 10.95890410958904% (serialize/foxurl/6)
+
+=== ВАРИАНТ-ПАРА f3a9631 (idx 259) vs 6cc807d (idx 255) ===
+n=75 median=0.0 p10=-0.5533513590436886 p90=1.2587645736020059
+spread=1.8121159326456944 -> 1.8 п.п.
+canary-vs=-0.06884332186680142 -> -0.07% (cur 1358673 vs 1359609)
+
+=== КРОСС-ДЕЛЬТЫ f3a9631 vs bca9f03 (нормальный vs медленный) ===
+median=12.418300653594772 p10=-34.16352556686411 p90=23.015873015873016
+spread=57.17939858273712 canary-vs=12.123287727756244 (cur 1358673 vs 1211767)
+  find/foxsearch/zzz-absent-zzz: 207039 vs 326982 = -36.68%
+  find/foxsearch/Mozilla Corporation: 206908 vs 331820 = -37.64%
+  find/foxsearch/горячие пути: 206564 vs 336094 = -38.54%
+  multi/naive-fox/2: 414482 vs 673015 = -38.41%
+  multi/naive-fox/4: 1062806 vs 1751544 = -39.32%
+  multi/naive-std/2: 1582333 vs 2018119 = -21.59%
+
+=== foxsearch-конверт: позиция точки #257 ===
+CLASSIC с zzz: 147, нормальных: 133
+f3a9631 zzz 207039 rank в нормальном конверте: 66/133 (медиана 207045)
+
+=== corpus-all и профиль (три записи + якорь) ===
+f3a9631 c2: canary=1358673 corpus-all=1181 профиль=5.7409e-05
+f3a9631 c1: canary=1354876 corpus-all=1184 профиль=5.6094e-05
+6cc807d: canary=1359609 corpus-all=1186 профиль=5.6634e-05
+bca9f03: canary=1211767 corpus-all=938 профиль=5.8592e-05
+d70534f: canary=1356121 corpus-all=1182 профиль=5.6042e-05
