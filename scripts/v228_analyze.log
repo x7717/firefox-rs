@@ -1,0 +1,45 @@
+записей в истории: 247
+коммитов-дублей: 8 ['2b6489b', '336e9ff', '415fe95', '68e6dd4', '6a239dc', '76d4050', '87d7d86', 'ff7b23e']
+  белый список 8: СОВПАДАЕТ
+  точек (уникальных коммитов): 239
+
+последняя запись: idx 246 c65f845 [MEDIUM] canary=1070244
+пара (GUARD): c65f845 [MEDIUM] vs 6241266 [MEDIUM] idx 246 vs 245, distance 1, between=NOTHING between
+  профиль v11/canary: c65f845 7.1946e-05 [NEW] / 6241266 5.5528e-05 [OLD] — CROSS-PROFILE (дискриминатор окна 229, порог 6.0e-05)
+
+сравнимых бенчей: n=75
+МЕДИАНА: 3.9215686274509802 (f2 3.9215686274509887, |diff| 8.438e-15)
+  rank: [37] соседи 3.9026442849885044 / 4.9504950495049505
+P10: -40.09832520539934 (f2 -40.09832520539934)
+P90: 46.93877551020408 (f2 46.93877551020409)
+SPREAD: 87.03710071560343 -> 87.0 п.п. (f2 87.03710071560343)
+CANARY-vs-ПАРА: 14.285775305591358 -> +14.29% (f2 14.285775305591365) (cur 1070244 vs пара 936463)
+НУЛИ: 0
+FP DUAL-FORMULA max |f1-f2|: 1.4210854715202004e-14 (worst classifier/foxsearch-multi/8)
+
+ФЛАГИ (>20%): 20
+  ФЛАГ +61.9%  parse/foxurl/10: 42 -> 68  (микро=True)
+  ФЛАГ +51.1%  parse/foxurl/4: 47 -> 71  (микро=True)
+  ФЛАГ +50.0%  serialize/foxurl/3: 2 -> 3  (микро=True)
+  ФЛАГ +50.0%  parse/foxurl/2: 48 -> 72  (микро=True)
+  ФЛАГ +49.1%  classifier/foxsearch-multi/8: 4813 -> 7178  (микро=False)
+  ФЛАГ +48.9%  parse/foxurl/3: 47 -> 70  (микро=True)
+  ФЛАГ +48.1%  parse/foxurl/11: 52 -> 77  (микро=True)
+  ФЛАГ +46.9%  parse/foxurl/5: 49 -> 72  (микро=True)
+  ФЛАГ +45.6%  parse/foxurl/1: 57 -> 83  (микро=True)
+  ФЛАГ +44.7%  parse/foxurl/13: 47 -> 68  (микро=True)
+  ФЛАГ +42.9%  parse/foxurl/12: 42 -> 60  (микро=True)
+  ФЛАГ +42.9%  parse/foxurl/0: 42 -> 60  (микро=True)
+  ФЛАГ +40.0%  parse/foxurl/9: 55 -> 77  (микро=True)
+  ФЛАГ +37.5%  parse/foxurl/6: 32 -> 44  (микро=True)
+  ФЛАГ +33.7%  parse/foxurl/corpus-all: 741 -> 991  (микро=False)
+  ФЛАГ +31.1%  parse/foxurl/7: 74 -> 97  (микро=True)
+  ФЛАГ +29.9%  classifier/foxsearch-multi/32: 11205 -> 14558  (микро=False)
+  ФЛАГ +29.7%  parse/foxurl/8: 64 -> 83  (микро=True)
+  ФЛАГ +25.3%  parse/foxjson/small: 91 -> 114  (микро=True)
+  ФЛАГ +22.6%  parse/foxjson/strs-5000: 228208 -> 279723  (микро=False)
+ОТНОШЕНИЯ (крейт-медианы): foxjson +18.0% | foxsearch -41.7% | foxurl +37.5%   exact: foxjson=17.96976442125724 foxsearch=-41.651462566416676 foxurl=37.46630727762803
+suppressed: ['foxsearch'], top foxurl +37.47, span 79.11776984404472 -> 79
+ПРОГНОЗ ВЕРДИКТА: ДРЕЙФ СРЕДЫ exit 3 (suppressed НЕ пуст: foxsearch)
+РЕЕСТР-КАНДИДАТ: median НЕ материализуется
+EXIT=0
