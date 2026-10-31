@@ -1,0 +1,36 @@
+записей в истории: 258
+коммитов-дублей: 8 ['2b6489b', '336e9ff', '415fe95', '68e6dd4', '6a239dc', '76d4050', '87d7d86', 'ff7b23e']
+  белый список 8: СОВПАДАЕТ
+  точек (уникальных коммитов): 250
+
+последняя запись: idx 257 bca9f03 [CLASSIC] canary=1211767
+пара (GUARD): bca9f03 [CLASSIC] vs 6cc807d [CLASSIC] idx 257 vs 255, distance 2, between=['bc328fa']
+  профиль v11/canary: bca9f03 5.8592e-05 [OLD] / 6cc807d 5.6634e-05 [OLD] — SAME-PROFILE (дискриминатор окна 229, порог 6.0e-05)
+
+сравнимых бенчей: n=75
+МЕДИАНА: -10.873861529307323 (f2 -10.873861529307327, |diff| 3.553e-15)
+  rank: [37] соседи -11.085972850678733 / -10.76923076923077
+P10: -18.580475564583583 (f2 -18.580475564583587)
+P90: 51.61707528029036 (f2 51.61707528029036)
+SPREAD: 70.19755084487394 -> 70.2 п.п. (f2 70.19755084487394)
+CANARY-vs-ПАРА: -10.873861529307323 -> -10.87% (f2 -10.873861529307327) (cur 1211767 vs пара 1359609)
+НУЛИ: 0
+FP DUAL-FORMULA max |f1-f2|: 1.4210854715202004e-14 (worst multi/naive-fox/2)
+
+ФЛАГИ (>20%): 12
+  ФЛАГ +66.6%  multi/naive-fox/4: 1051548 -> 1751544  (микро=False)
+  ФЛАГ +65.6%  find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru: 320183 -> 530212  (микро=False)
+  ФЛАГ +62.7%  find/foxsearch/горячие пути: 206563 -> 336094  (микро=False)
+  ФЛАГ +62.7%  multi/naive-fox/2: 413681 -> 673015  (микро=False)
+  ФЛАГ +60.1%  find/foxsearch/Mozilla Corporation: 207222 -> 331820  (микро=False)
+  ФЛАГ +58.0%  find/foxsearch/zzz-absent-zzz: 206933 -> 326982  (микро=False)
+  ФЛАГ +58.0%  multi/naive-fox/8: 2461145 -> 3887893  (микро=False)
+  ФЛАГ +51.6%  multi/foxsearch-multi/2: 247422 -> 375134  (микро=False)
+  ФЛАГ +27.7%  multi/naive-std/2: 1580400 -> 2018119  (микро=False)
+  ФЛАГ +25.6%  multi/naive-std/8: 7771445 -> 9763349  (микро=False)
+  ФЛАГ +25.5%  multi/naive-std/4: 3230763 -> 4054785  (микро=False)
+  ФЛАГ +21.4%  find/std/zzz-absent-zzz: 1024586 -> 1243354  (микро=False)
+ОТНОШЕНИЯ (крейт-медианы): foxjson -14.9% | foxsearch +42.1% | foxurl -3.6%   exact: foxjson=-14.935578077829327 foxsearch=42.08971571359453 foxurl=-3.6486486486486447
+suppressed: ['foxjson'], top foxsearch +42.09, span 57.025293791423856 -> 57
+ПРОГНОЗ ВЕРДИКТА: ДРЕЙФ СРЕДЫ exit 3 (suppressed НЕ пуст: foxjson)
+РЕЕСТР-КАНДИДАТ: median НЕ материализуется
