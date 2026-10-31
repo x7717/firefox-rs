@@ -1,0 +1,7 @@
+якорь d70534f canary=1356121, точка f27086a canary=1359595
+canary-vs-якорь: 0.25617183127464294 -> +0.26%
+n=75: median 0.4132231404958678, p10 -0.5547686496694996, p90 2.0408163265306123, spread 2.595584976200112 -> 2.6 п.п.
+пробоев (>20%): 0; нулей: 19 ['parse/foxjson/small', 'parse/foxurl/0', 'parse/foxurl/1', 'parse/foxurl/2', 'parse/foxurl/3', 'parse/url_crate/3', 'parse/foxurl/4', 'parse/foxurl/5', 'parse/foxurl/8', 'parse/foxurl/9', 'parse/foxurl/10', 'parse/foxurl/11', 'parse/foxurl/12', 'parse/foxurl/13', 'serialize/foxurl/0', 'serialize/foxurl/2', 'serialize/foxurl/3', 'serialize/foxurl/4', 'serialize/foxurl/5']
+min 4 против якоря: serialize/foxurl/dirty-all -7.2; serialize/foxurl/6 -4.0; parse/serde_json/strs-5000 -2.5; serialize/foxurl/1 -2.3
+top 5 против якоря: find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru +2.7; parse/url_crate/7 +3.1; find/foxsearch/zzz-absent-zzz +3.4; canonical/url_crate/dirty-all +4.2; canonical/foxurl/dirty-all +4.2
+ОТНОШЕНИЯ против якоря: foxjson +0.45 | foxsearch +1.55 | foxurl -1.28
