@@ -1,0 +1,28 @@
+=== ПАРА 289a974 (idx 261) vs bc328fa (idx 256) ===
+n=75 median=0.3390255866214937 p10=-1.7293704149689184 p90=7.142857142857142
+spread=8.872227557826061 canary-vs-пара=-0.15616178527824054 (cur 718003 vs 719126)
+НУЛИ 14: parse/foxurl/0, parse/foxurl/1, parse/foxurl/2, parse/foxurl/3, parse/url_crate/3, parse/foxurl/5, parse/url_crate/5, parse/foxurl/6, parse/url_crate/7, parse/foxurl/8, parse/foxurl/9, parse/foxurl/10, parse/foxurl/11, serialize/foxurl/3
+fp max |f1-f2|=1.1546319456101628e-14 (worst canonical/foxurl/corpus-all)
+
+=== ВАРИАНТ-ПАРА 289a974 vs 6259040 (idx 244) ===
+n=75 median=-3.149606299212598 p10=-7.317073170731707 p90=2.564102564102564
+spread=9.88117573483427 canary-vs-пара=-5.247523315214307 (cur 718003 vs 757767)
+НУЛИ 3: parse/url_crate/12, parse/foxurl/13, serialize/foxurl/3
+fp max |f1-f2|=1.1102230246251565e-14 (worst parse/foxurl/7)
+
+canary-vs-FAST-якорь 1c96db6 (720876): -0.39854288393565607 -> -0.40%
+FAST-коридор 568-795k: canary 718003 INSIDE: True
+
+=== find/foxsearch/zzz-absent-zzz конверт по ВСЕМ FAST-записям ===
+FAST записей с zzz: 65; нормальных (<300k): 57, патологических (>=300k): 8
+нормальный конверт: min 108773 (336e9ff), max 159730 (6259040), span 1.4684710360108
+289a974 zzz 123955 rank в нормальном конверте: 50/57
+медиана нормального конверта: 118918
+289a974 vs медиана: 4.235691821254982%
+bc328fa zzz 148698 rank: 56/57 (vs медиана 25.042466237239108%)
+
+=== corpus-all (parse/foxurl) FAST-записей ===
+87d7d86 579, 1c80b11 621, 1467f36 601, a383f78 703, 6259040 575, 7de3903 573, bc328fa 569, 289a974 578
+289a974 corpus-all: 578
+
+профиль exact 289a974: 5.571007363478983e-05 = 40/718003
