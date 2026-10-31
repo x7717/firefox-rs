@@ -1,0 +1,28 @@
+=== ПАРА 8874e22 (idx 271) vs 8517f04 (idx 270) ===
+n=75 median=0.0 p10=-1.491807287845439 p90=1.1560693641618496
+spread=2.6478766520072883 canary-vs-пара=-0.48869789844501216 (cur 1356756 vs 1363419)
+НУЛИ 15: parse/foxurl/0, parse/foxurl/2, parse/foxurl/3, parse/foxurl/4, parse/foxurl/6, parse/url_crate/6, parse/foxurl/8, parse/foxurl/10, parse/foxurl/13, serialize/foxurl/0, serialize/foxurl/2, serialize/foxurl/3, serialize/foxurl/4, serialize/foxurl/5, canonical/foxurl/corpus-all
+fp max |f1-f2|=1.0658141036401503e-14 (worst parse/serde_json/small)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 2.6478766520073 INSIDE: True
+
+=== ВАРИАНТ-ПАРА 8874e22 vs f3a9631 (idx 259) ===
+n=75 median=0.0 p10=-1.0389610389610389 p90=1.8010576813550319
+spread=2.8400187203160705 canary-vs-пара=-0.14109355231170412 (cur 1356756 vs 1358673)
+НУЛИ 14: parse/url_crate/0, parse/foxurl/1, parse/url_crate/1, parse/foxurl/2, parse/foxurl/3, parse/foxurl/4, parse/foxurl/6, parse/foxurl/7, parse/foxurl/8, parse/foxurl/10, serialize/foxurl/0, serialize/foxurl/2, serialize/foxurl/3, serialize/foxurl/4
+fp max |f1-f2|=1.0436096431476471e-14 (worst multi/foxsearch-multi/2)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 2.8400187203161 INSIDE: True
+
+canary-vs-CLASSIC-якорь d70534f (1356121): 0.04682473024162298 -> +0.05%
+
+профиль exact 8874e22: 5.6753019702879516e-05 = 77/1356756
+OLD-коридор 5.25-5.91e-05: INSIDE True; NEW-порог 6.55e-05: False
+профиль пары 8517f04: 5.7209119133589896e-05 — SAME-PROFILE Δ -0.7972495252816865%
+
+=== corpus-all (parse/foxurl) CLASSIC-записей (последние 10) ===
+f3a9631 1184, f3a9631 1181, f27086a 1189, 763e4a5 1190, 1d15e19 1189, 382423d 1184, bda5d20 1183, b59846a 1196, 8517f04 1183, 8874e22 1186
+8874e22 corpus-all: 1186
+
+=== find/foxsearch/zzz-absent-zzz конверт по CLASSIC-записям ===
+CLASSIC записей с zzz: 155; нормальных (<300k): 141, патологических (>=300k): 14
+нормальный конверт: min 203811, max 231085, медиана 207061
+8874e22 zzz 208939 rank: 111/141 (vs медиана 0.9069791027764765%)
