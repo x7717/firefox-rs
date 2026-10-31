@@ -1,0 +1,35 @@
+=== ПАРА 87ec41e (idx 268) vs 9da4f3e (idx 264) ===
+n=75 median=4.503469640181311 p10=-40.308683931666486 p90=45.23809523809524
+spread=85.54677916976172 canary-vs-пара=13.706348986510243 (cur 1067291 vs 938638)
+ФЛАГИ |дельта|>20: 32
+НУЛИ 0: 
+fp max |f1-f2|=1.0658141036401503e-14 (worst parse/foxurl/7)
+кросс-профиль NEW vs OLD — коридор 2.2..4.5 НЕ применим (урок 229)
+min 4: find/foxsearch/Mozilla Corporation -49.1; multi/naive-fox/2 -49.1; find/foxsearch/zzz-absent-zzz -49.1; find/foxsearch/горячие пути -48.9
+top 5: parse/foxurl/10 +57.1; serialize/foxurl/3 +50.0; classifier/foxsearch-multi/8 +48.0; parse/foxurl/2 +47.9; parse/foxurl/4 +46.8
+
+=== ВАРИАНТ-ПАРА 87ec41e vs 45afa12 (idx 252, SAME-HOST) ===
+n=75 median=-0.024021859892502176 p10=-1.7241379310344827 p90=0.9389671361502347
+spread=2.663105067184717 canary-vs-пара=-0.15491881262588322 (cur 1067291 vs 1068947)
+ФЛАГИ |дельта|>20: 0
+НУЛИ 8: parse/foxurl/3, parse/foxurl/6, parse/foxurl/7, parse/foxurl/8, parse/foxurl/12, parse/foxurl/corpus-all, serialize/foxurl/2, serialize/foxurl/3
+fp max |f1-f2|=1.0547118733938987e-14 (worst parse/url_crate/9)
+NEW-MEDIUM same-host коридор 2.2..4.5: spread 2.6631050671847 INSIDE: True
+min 4: parse/url_crate/7 -10.3; parse/foxurl/5 -4.2; parse/url_crate/2 -3.0; parse/foxurl/10 -2.9
+top 5: serialize/foxurl/6 +4.6; parse/foxurl/0 +3.4; serialize/foxurl/0 +3.3; parse/foxurl/9 +1.3; canonical/foxurl/corpus-all +1.3
+
+профиль exact 87ec41e: 7.120832087968511e-05 = 76/1067291
+NEW-коридор 6.55-7.65e-05 (урок 229): INSIDE True; OLD-порог 6.0e-05: False
+профиль пары 9da4f3e: 5.5399419158397596e-05 — КРОСС-ПРОФИЛЬ Δ 28.536222872818982%
+профиль same-host 45afa12: 7.203350587073073e-05 — SAME-PROFILE Δ -1.1455571696405662%
+
+=== corpus-all (parse/foxurl) MEDIUM-записей (последние 10) ===
+8cfc822 976, 955d2d5 997, 5d676f2 597, 6241266 741, c65f845 991, b760fe9 947, 45afa12 1000, e24e80f 791, 9da4f3e 743, 87ec41e 1000
+87ec41e corpus-all: 1000
+
+=== zzz MEDIUM-записей (последние 10) ===
+8cfc822 178564, 955d2d5 178670, 5d676f2 115826, 6241266 350166, c65f845 178543, b760fe9 315831, 45afa12 178784, e24e80f 355810, 9da4f3e 351452, 87ec41e 178876
+87ec41e zzz: 178876 (NEW-позиция <300k)
+
+ИТОГ: флагов ПАРА=32 ВАРИАНТ=0
+ДРЕЙФ-протокол w212/w242: повторный прогон = НОВАЯ запись, откат НЕ нужен

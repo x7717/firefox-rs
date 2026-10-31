@@ -1,0 +1,7 @@
+якорь d70534f canary=1356121, точка 87ec41e canary=1067291
+canary-vs-якорь: -21.29824698533538 -> -21.30%
+n=75: median -21.718308448064924, p10 -31.297709923664126, p90 -7.865168539325842, spread 23.432541384338283 -> 23.4 п.п.
+пробоев (>20%): 0; нулей: 1 ['parse/foxurl/11']
+min 4 против якоря: classifier/naive-std/8 -38.4; parse/url_crate/12 -36.1; classifier/naive-fox/32 -33.9; classifier/naive-std/32 -33.7
+top 5 против якоря: parse/foxurl/4 -5.5; parse/foxurl/0 -4.7; parse/foxurl/10 -2.9; parse/foxurl/2 -2.7; parse/foxurl/11 +0.0
+ОТНОШЕНИЯ против якоря: foxjson +0.73 | foxsearch -2.14 | foxurl +33.26

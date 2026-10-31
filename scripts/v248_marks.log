@@ -1,0 +1,26 @@
+n=75 (int(n*0.10)=7, int(n*0.90)=67)
+p10 deltas[7] = -40.308683931666486
+  соседи deltas[6]=-43.41151534710895 / deltas[8]=-21.33848730087492
+p90 deltas[67] = 45.23809523809524
+  соседи deltas[66]=43.47826086956522 / deltas[68]=46.15384615384615
+median rank[37] = 4.503469640181311, соседи rank[36]=3.6666666666666665 / rank[38]=4.878048780487805
+parse/foxurl/corpus-all: last=1000 prev=743
+find/foxsearch/zzz-absent-zzz: last=178876 prev=351452
+parse/foxurl/11: last=76 prev=52
+corpus-all дельта: 34.58950201884253 -> +34.59%
+профиль точный: 7.120832087968511e-05 = 76/1067291
+foxsearch zzz: 178876 (<300k NEW-позиция)
+=== последние 10 MEDIUM записей (профиль-раскол) ===
+8cfc822 canary=1068159 v11=70 проф=6.5533e-05 [NEW] corpus-all=976 zzz=178564
+955d2d5 canary=1063803 v11=77 проф=7.2382e-05 [NEW] corpus-all=997 zzz=178670
+5d676f2 canary=909207 v11=41 проф=4.5094e-05 [OLD] corpus-all=597 zzz=115826
+6241266 canary=936463 v11=52 проф=5.5528e-05 [OLD] corpus-all=741 zzz=350166
+c65f845 canary=1070244 v11=77 проф=7.1946e-05 [NEW] corpus-all=991 zzz=178543
+b760fe9 canary=1186209 v11=69 проф=5.8169e-05 [OLD] corpus-all=947 zzz=315831
+45afa12 canary=1068947 v11=77 проф=7.2034e-05 [NEW] corpus-all=1000 zzz=178784
+e24e80f canary=992228 v11=57 проф=5.7446e-05 [OLD] corpus-all=791 zzz=355810
+9da4f3e canary=938638 v11=52 проф=5.5399e-05 [OLD] corpus-all=743 zzz=351452
+87ec41e canary=1067291 v11=76 проф=7.1208e-05 [NEW] corpus-all=1000 zzz=178876
+NEW-MEDIUM canary кластер: 1063803-1070244; canary 1067291 INSIDE: True
+NEW-MEDIUM corpus-all: 976-1000; 1000 INSIDE: True
+НУЛИ пары: 0 []
