@@ -1,0 +1,24 @@
+n=75 (int(n*0.10)=7, int(n*0.90)=67)
+p10 deltas[7] = 0.0
+  соседи deltas[6]=0.0 / deltas[8]=0.0
+p90 deltas[67] = 20.224719101123593
+  соседи deltas[66]=18.404907975460123 / deltas[68]=21.354166666666664
+median rank[37] = 4.542747960987851, соседи rank[36]=3.707059352098865 / rank[38]=4.9928673323823105
+parse/foxurl/corpus-all: last=578 prev=601
+find/foxsearch/zzz-absent-zzz: last=117754 prev=112077
+parse/foxurl/11: last=43 prev=42
+corpus-all дельта: -3.826955074875208 -> -3.83%
+профиль точный: 5.670803275877985e-05 = 43/758270
+foxsearch zzz: 117754 (НОРМАЛЬНЫЙ <300k)
+последние 7 FAST canary: a383f78 894329, 6259040 757767, 7de3903 721275, bc328fa 719126, 289a974 718003, fd7e926 744950, 4eb8807 758270
+FAST-коридор canary 568-795k: INSIDE True (реестр w253)
+последние 7 FAST профили v11/canary:
+  a383f78 5.478968030780619e-05 [OLD] INSIDE OLD-коридора 5.25-5.91e-05: True
+  6259040 5.674567512177226e-05 [OLD] INSIDE OLD-коридора 5.25-5.91e-05: True
+  7de3903 5.5457349831894906e-05 [OLD] INSIDE OLD-коридора 5.25-5.91e-05: True
+  bc328fa 5.5623075789221916e-05 [OLD] INSIDE OLD-коридора 5.25-5.91e-05: True
+  289a974 5.571007363478983e-05 [OLD] INSIDE OLD-коридора 5.25-5.91e-05: True
+  fd7e926 5.6379622793476075e-05 [OLD] INSIDE OLD-коридора 5.25-5.91e-05: True
+  4eb8807 5.670803275877985e-05 [OLD] INSIDE OLD-коридора 5.25-5.91e-05: True
+FAST corpus-all кластер 569-703 (последние 6 FAST): 569-601, last 578 INSIDE: True
+НУЛИ пары: 3 ['parse/foxurl/9', 'serialize/foxurl/0', 'serialize/foxurl/3']

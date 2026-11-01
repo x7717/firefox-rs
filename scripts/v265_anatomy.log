@@ -1,0 +1,7 @@
+якорь 1c96db6 canary=720876, точка 4eb8807 canary=758270
+canary-vs-якорь: 5.187299896237356 -> +5.19%
+n=75: median 5.555555555555555, p10 0.3668952749610805, p90 19.875776397515526, spread 19.508881122554445 -> 19.5 п.п.
+пробоев (>20%): 7; нулей: 3 ['parse/foxjson/small', 'parse/foxurl/2', 'serialize/foxurl/3']
+min 4 против якоря: classifier/naive-std/32 -2.4; multi/foxsearch-multi/2 -0.5; classifier/naive-fox/32 -0.5; parse/foxjson/small +0.0
+top 5 против якоря: parse/url_crate/8 +24.4; parse/url_crate/3 +26.1; parse/url_crate/4 +26.8; parse/url_crate/0 +27.5; parse/url_crate/11 +27.9
+ОТНОШЕНИЯ против якоря: foxjson -2.05 | foxsearch -2.62 | foxurl -12.69
