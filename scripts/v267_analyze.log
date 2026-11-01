@@ -1,0 +1,35 @@
+записей в истории: 288
+коммитов-дублей: 9 ['2b6489b', '336e9ff', '415fe95', '68e6dd4', '6a239dc', '76d4050', '87d7d86', 'f3a9631', 'ff7b23e']
+  белый список 9: СОВПАДАЕТ
+  точек (уникальных коммитов): 279
+
+последняя запись: idx 287 b1bf50c [CLASSIC] canary=1261019
+пара (GUARD): b1bf50c [CLASSIC] vs e990865 [CLASSIC] idx 287 vs 286, distance 1, between=[]
+  профиль v11/canary: b1bf50c 5.3925e-05 [OLD] / e990865 7.6325e-05 [NEW] — CROSS-PROFILE (дискриминатор окна 229, порог 6.0e-05)
+
+сравнимых бенчей: n=75
+МЕДИАНА: -0.3389226085968719 (f2 -0.33892260859686996, |diff| 1.943e-15)
+  rank: [37] соседи -0.37209302325581395 / -0.29239766081871343
+P10: -30.693069306930692 (f2 -30.6930693069307) deltas[7] соседи -30.76923076923077 / -30.337078651685395
+P90: 37.049368900827915 (f2 37.04936890082793) deltas[67] соседи 30.701308913388925 / 43.59476280401947
+SPREAD: 67.74243820775861 -> 67.7 п.п. (f2 67.7424382077586)
+CANARY-vs-ПАРА: -7.454124063913669 -> -7.45% (cur 1261019 vs пара 1362588)
+НУЛИ: 1
+FP DUAL-FORMULA max |f1-f2|: 1.4210854715202004e-14 (worst multi/naive-fox/8)
+
+ФЛАГИ (>20%): 11
+  ФЛАГ +57.5% multi/naive-fox/2
+  ФЛАГ +56.2% find/foxsearch/горячие пути
+  ФЛАГ +55.9% find/foxsearch/zzz-absent-zzz
+  ФЛАГ +55.5% multi/foxsearch-multi/2
+  ФЛАГ +55.5% find/foxsearch/Mozilla Corporation
+  ФЛАГ +48.6% multi/naive-fox/4
+  ФЛАГ +43.6% find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru
+  ФЛАГ +37.0% multi/naive-fox/8
+  ФЛАГ +30.7% classifier/naive-std/8
+  ФЛАГ +30.3% classifier/naive-std/32
+  ФЛАГ +24.6% multi/foxsearch-multi/4
+ОТНОШЕНИЯ (крейт-медианы): foxjson -8.7% | foxsearch +50.8% | foxurl -31.3%   exact: foxjson=-8.725244767729212, foxsearch=50.752393117350806, foxurl=-31.261976457705998
+suppressed: ['foxjson', 'foxurl'], elevated: ['foxsearch'], top foxsearch +50.75%, span 82.0143695750568 -> 82
+ПРОГНОЗ ВЕРДИКТА: ДРЕЙФ exit 3 (suppressed НЕ пуст — относительно УСКОРЕНА кодом не бывает)
+РЕЕСТР-КАНДИДАТ: median НЕ материализуется

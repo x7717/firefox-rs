@@ -1,0 +1,14 @@
+профиль точный v11/canary: 68/1261019 = 5.392464348277068e-05 -> 5.392464e-05 [OLD-таг]
+зона-930 CLASSIC-визиты: [('573f613', 7), ('fd0ab4b', 27), ('102d44d', 42), ('c7206f4', 67), ('5db125a', 110), ('5ae02bc', 214), ('bca9f03', 257), ('680b8e9', 275), ('b1bf50c', 287)]
+  canary кластер: 1211767-1262371 (Дельта 4.18%)
+  профиль кластер: 5.3867e-05-5.8592e-05 (Дельта 8.77%)
+  corpus-all: [927, 928, 929, 930, 933, 938], small: [117, 129, 130, 131]
+  zzz конверт зоны-930: 326982-385803 (cur 359407 — INSIDE)
+реестр зон CLASSIC-записей (закон хост x класс): {'OLD 1180-1196': 106, 'НОВАЯ-930': 9, 'НОВАЯ-1273': 6, 'NEW 1314-1424': 2, 'др.': 46}
+
+АНАТОМИЯ vs CLASSIC-якорь d70534f (idx 66, canary 1356121):
+  canary-vs-якорь -7.01%, n=75, median -6.97, p10 -17.05 (deltas[7]), p90 +46.85 (deltas[67]), разброс 63.9 п.п.
+  ПРОБОЕВ(флагов) 10, нулей 1
+  min 4: parse/foxurl/corpus-all -21.3, serialize/foxurl/4 -19.8, parse/foxurl/5 -19.2, parse/foxurl/3 -18.7
+  top 5: multi/naive-fox/2 +75.2, find/foxsearch/zzz-absent-zzz +73.6, find/foxsearch/горячие пути +73.5, find/foxsearch/Mozilla Corporation +72.8, multi/naive-fox/4 +58.3
+  ОТНОШЕНИЯ против якоря: foxjson -8.52 | foxsearch +49.59 | foxurl -7.52   exact: foxjson=-8.516445471387312, foxsearch=49.590406686166574, foxurl=-7.517793594306054

@@ -1,0 +1,22 @@
+
+== ВАРИАНТ-ПАРА зона-930 vs w266: b1bf50c (idx 287) vs 680b8e9 (idx 275, distance 12) ==
+n=75 median -0.18115942028985507 (rank [37]) p10 -8.380079719395784 p90 0.04982580802306586 spread 8.42990552741885 -> 8.4 п.п.
+canary-vs-вариант 0.04982580802306586 -> +0.05% (cur 1261019 vs 1260391)
+  parse/foxurl/corpus-all: 930 vs 930 -> +0.00%
+  parse/foxjson/small: 131 vs 130 -> +0.77%
+  find/foxsearch/zzz-absent-zzz: 359407 vs 351428 -> +2.27%
+  parse/foxurl/11: 68 vs 68 -> +0.00%
+НУЛИ: 25 ['parse/foxurl/0', 'parse/foxurl/1', 'parse/foxurl/3', 'parse/url_crate/3', 'parse/url_crate/4', 'parse/foxurl/6', 'parse/url_crate/6', 'parse/url_crate/7', 'parse/foxurl/8', 'parse/url_crate/8', 'parse/foxurl/9', 'parse/url_crate/9']
+FP DUAL-FORMULA max |f1-f2|: 6.938893903907228e-15 (worst parse/url_crate/12)
+
+== CROSS-CHECK зона-930 vs w215: b1bf50c (idx 287) vs 5ae02bc (idx 214, distance 73) ==
+n=75 median 0.0 (rank [34]) p10 -3.037887113045758 p90 0.3076923076923077 spread 3.3455794207380656 -> 3.3 п.п.
+canary-vs-вариант -0.10710005220335385 -> -0.11% (cur 1261019 vs 1262371)
+  parse/foxurl/corpus-all: 930 vs 938 -> -0.85%
+  parse/foxjson/small: 131 vs 131 -> +0.00%
+  find/foxsearch/zzz-absent-zzz: 359407 vs 371561 -> -3.27%
+  parse/foxurl/11: 68 vs 68 -> +0.00%
+НУЛИ: 23 ['parse/foxjson/small', 'parse/foxurl/0', 'parse/foxurl/1', 'parse/url_crate/2', 'parse/foxurl/3', 'parse/url_crate/3', 'parse/foxurl/4', 'parse/foxurl/5', 'parse/foxurl/6', 'parse/url_crate/6', 'parse/url_crate/7', 'parse/foxurl/8']
+FP DUAL-FORMULA max |f1-f2|: 1.0824674490095276e-14 (worst parse/url_crate/4)
+
+вариант-медианы: -0.18115942028985507 / 0.0 — в РЕЕСТР НЕ идут (вариант-медиана в реестр НЕ идёт, урок w278)
