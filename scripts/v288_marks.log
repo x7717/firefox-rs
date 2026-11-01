@@ -1,0 +1,38 @@
+CLASSIC в кластере 1260k [1253700-1262371]: 8 записей (включая судимую): 573f613, fd0ab4b, 102d44d, 5db125a, 5ae02bc, 680b8e9, b1bf50c, fe76381
+fe76381 = 8-й визит семейства (считая по хронологии)
+кластер canary: 1253700-1262371 (Дельта 0.69%) — 1259770 INSIDE
+zzz-конверт семьи: 333526-385803 — 376702 INSIDE
+small семьи: 129-131 — 130 INSIDE (норма 130-131)
+corpus-all семьи: 927-938 — 930 INSIDE
+профиль-конверт семьи (с судимой): 5.3867e-05-5.4772e-05 — 5.4772e-05 INSIDE
+профиль-конверт 7 предшественников: 5.3867e-05-5.4239e-05 — 5.4772e-05 OUTSIDE (верхний выброс +0.98% над max; OLD-таг сохраняется, порог 6.0e-05; прецедент верхнего выброса семьи: 97e1e53 corpus-all 1056)
+
+АНАТОМИЯ против same-form 1260k b1bf50c (idx 287, canary 1261019): canary -0.09904688192644202 -> -0.10%
+  слои: median 0.0 (НУЛЬ), p10 -0.6181638490558866, p90 1.639344262295082, разброс 2.2575081113509685 -> 2.3 п.п.
+  пробои против (same-form 1260k, >20%): 0
+  нулей против same-form 1260k: 26
+  min: parse/serde_json/session-5000 -2.2 / find/std/zzz-absent-zzz -1.4 / serialize/foxurl/5 -1.3 / find/foxsearch/горячие пути -1.2
+  top: find/foxsearch/Mozilla Corporation +5.3 / multi/naive-fox/2 +5.2 / find/foxsearch/zzz-absent-zzz +4.8 / multi/foxsearch-multi/2 +2.3 / multi/naive-fox/4 +2.2
+ОТНОШЕНИЯ против same-form 1260k: foxjson +1.07 | foxsearch +1.41 | foxurl +0.00   exact: foxjson=1.0693877250589345, foxsearch=1.4111191829097203, foxurl=0.0
+corpus-all vs same-form 1260k: 930 vs 930 +0.00%
+
+АНАТОМИЯ против канонический OLD-якорь d70534f (idx 66, canary 1356121): canary -7.104896981906482 -> -7.10%
+  слои: median -7.186678352322525 (НЕ-нуль), p10 -17.045454545454543, p90 47.862064734944454, разброс 64.907519280399 -> 64.9 п.п.
+  пробои против (канонический OLD-якорь, >20%): 10
+    +84.2% multi/naive-fox/2
+    +81.9% find/foxsearch/zzz-absent-zzz
+    +81.9% find/foxsearch/Mozilla Corporation
+    +71.4% find/foxsearch/горячие пути
+    +61.8% multi/naive-fox/4
+    +59.3% multi/foxsearch-multi/2
+    +52.0% find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru
+    +47.9% multi/naive-fox/8
+    +25.6% multi/naive-std/4
+    +24.7% multi/naive-std/2
+  нулей против канонический OLD-якорь: 1
+  min: parse/foxurl/corpus-all -21.3 / serialize/foxurl/4 -19.8 / parse/foxurl/6 -18.4 / parse/foxurl/5 -17.9
+  top: multi/naive-fox/2 +84.2 / find/foxsearch/zzz-absent-zzz +81.9 / find/foxsearch/Mozilla Corporation +81.9 / find/foxsearch/горячие пути +71.4 / multi/naive-fox/4 +61.8
+ОТНОШЕНИЯ против канонический OLD-якорь: foxjson -8.56 | foxsearch +51.62 | foxurl -7.19   exact: foxjson=-8.564676842806229, foxsearch=51.615988570345074, foxurl=-7.187500000000002
+corpus-all vs канонический OLD-якорь: 1182 vs 930 -21.32%
+
+ИТОГ-маркеры: same-form b1bf50c разброс 2.3 п.п. (УЗКИЙ — хост-идентичность), канон-якорь d70534f разброс 64.9 п.п. (ШИРОКИЙ — чужая форма)
