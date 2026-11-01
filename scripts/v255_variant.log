@@ -1,0 +1,28 @@
+=== ПАРА 680b8e9 (idx 275) vs f821146 (idx 274) ===
+n=75 median=-7.758620689655173 p10=-17.24137931034483 p90=60.58600469211341
+spread=77.82738400245825 canary-vs-пара=-7.174920257796913 (cur 1260391 vs 1357813)
+НУЛИ 1: serialize/foxurl/3
+fp max |f1-f2|=2.842170943040401e-14 (worst find/foxsearch/Mozilla Corporation)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 77.8273840024582 INSIDE: False
+
+=== ВАРИАНТ-ПАРА 680b8e9 vs f3a9631 (idx 259) ===
+n=75 median=-7.233675799842936 p10=-16.666666666666664 p90=59.58150855101133
+spread=76.248175217678 canary-vs-пара=-7.233675799842936 (cur 1260391 vs 1358673)
+НУЛИ 1: serialize/foxurl/3
+fp max |f1-f2|=2.842170943040401e-14 (worst find/foxsearch/Mozilla Corporation)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 76.2481752176780 INSIDE: False
+
+canary-vs-CLASSIC-якорь d70534f (1356121): -7.059104607922155 -> -7.06%
+
+профиль exact 680b8e9: 5.395151187210953e-05 = 68/1260391
+OLD-коридор 5.25-5.91e-05: INSIDE True; NEW-порог 6.55e-05: False
+профиль пары f821146: 5.597236143710511e-05 — SAME-PROFILE Δ -3.610441855783347%
+
+=== corpus-all (parse/foxurl) CLASSIC-записей (последние 10) ===
+1d15e19 1189, 382423d 1184, bda5d20 1183, b59846a 1196, 8517f04 1183, 8874e22 1186, 39d2fa2 1182, b884706 1187, f821146 1188, 680b8e9 930
+680b8e9 corpus-all: 930
+
+=== find/foxsearch/zzz-absent-zzz конверт по CLASSIC-записям ===
+CLASSIC записей с zzz: 159; нормальных (<300k): 144, патологических (>=300k): 15
+нормальный конверт: min 203811, max 231085, медиана 207079.0
+680b8e9 zzz 351428 rank: 144/144 (vs медиана 69.70721318916935%)
