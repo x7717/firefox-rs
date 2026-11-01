@@ -1,0 +1,16 @@
+n=75 (int(n*0.10)=7, int(n*0.90)=67)
+p10 deltas[7] = -1.4189005621266144
+  соседи deltas[6]=-1.5384615384615385 / deltas[8]=-1.3796436540537715
+p90 deltas[67] = 2.5
+  соседи deltas[66]=2.3255813953488373 / deltas[68]=3.10077519379845
+median rank[33] = 0.0, соседи rank[32]=-0.04179116630355129 / rank[34]=0.0
+parse/foxurl/corpus-all: last=1188 prev=1187
+find/foxsearch/zzz-absent-zzz: last=206643 prev=207692
+parse/foxurl/11: last=76 prev=77
+corpus-all дельта: 0.08424599831508003 -> +0.08%
+профиль точный: 5.597236143710511e-05 = 76/1357813
+foxsearch zzz: 206643 (НОРМАЛЬНЫЙ <300k)
+последние 8 CLASSIC canary: 382423d 1362274, bda5d20 1356634, b59846a 1360923, 8517f04 1363419, 8874e22 1356756, 39d2fa2 1358551, b884706 1365873, f821146 1357813
+OLD-кластер 7 записей: 1356634-1365873
+canary f821146 1357813 INSIDE: True
+НУЛИ пары: 6 ['parse/url_crate/2', 'parse/foxurl/8', 'parse/foxurl/9', 'parse/foxurl/12', 'serialize/foxurl/3', 'serialize/foxurl/6']
