@@ -1,0 +1,28 @@
+=== ПАРА c0747e1 (idx 284) vs d092b80 (idx 283) ===
+n=75 median=0.0 p10=-1.5458616393596767 p90=1.3668929564299859
+spread=2.9127545957896626 canary-vs-пара=-0.19199092166638446 (cur 1361508 vs 1364127)
+НУЛИ 18: parse/foxjson/small, parse/foxurl/0, parse/foxurl/2, parse/foxurl/3, parse/url_crate/3, parse/foxurl/4, parse/foxurl/6, parse/url_crate/6, parse/foxurl/7, parse/foxurl/8, parse/foxurl/9, parse/foxurl/10, parse/url_crate/11, parse/foxurl/12, parse/foxurl/13, serialize/foxurl/0, serialize/foxurl/2, serialize/foxurl/3
+fp max |f1-f2|=1.0880185641326534e-14 (worst multi/naive-fox/8)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 2.9127545957897 INSIDE: True
+
+=== ВАРИАНТ-ПАРА c0747e1 vs f3a9631 (idx 259) ===
+n=75 median=0.16633666870374314 p10=-1.1494252873563218 p90=2.0421607378129116
+spread=3.1915860251692334 canary-vs-пара=0.20865947877083008 (cur 1361508 vs 1358673)
+НУЛИ 11: parse/url_crate/0, parse/foxurl/2, parse/foxurl/3, parse/foxurl/4, parse/url_crate/4, parse/foxurl/6, parse/foxurl/8, parse/foxurl/9, parse/foxurl/10, serialize/foxurl/3, serialize/foxurl/4
+fp max |f1-f2|=1.0547118733938987e-14 (worst multi/foxsearch-multi/8)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 3.1915860251692 INSIDE: True
+
+canary-vs-CLASSIC-якорь d70534f (1356121): 0.3972359398608237 -> +0.40%
+
+профиль exact c0747e1: 5.5820457904029944e-05 = 76/1361508
+OLD-коридор 5.25-5.91e-05: INSIDE True; NEW-порог 6.55e-05: False
+профиль пары d092b80: 5.717942684222217e-05 — SAME-PROFILE Δ -2.3766746419863365%
+
+=== corpus-all (parse/foxurl) CLASSIC-записей (последние 10) ===
+f821146 1188, 680b8e9 930, 3215b78 1273, c67c126 1186, f800b14 1178, 8be002a 1179, 12047b1 1186, 809fea1 1182, d092b80 1204, c0747e1 1186
+c0747e1 corpus-all: 1186
+
+=== find/foxsearch/zzz-absent-zzz конверт по CLASSIC-записям ===
+CLASSIC записей с zzz: 167; нормальных (<300k): 152, патологических (>=300k): 15
+нормальный конверт: min 203811, max 231085, медиана 207107.0
+c0747e1 zzz 210224 rank: 133/152 (vs медиана 1.5050191446933228%)
