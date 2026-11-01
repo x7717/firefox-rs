@@ -1,0 +1,14 @@
+=== ВАРИАНТ-СВИДЕТЕЛЬСТВО ОКНА 292 (6370dbb, FAST Формы-A) ===
+--- same-form Формы-A свидетели (ожидание УЗКИХ) ---
+WITNESS: vs 628dd1f (idx 291, distance 13) median -2.386961093585699, spread 9.692513368983956 -> 9.7, canary -4.87%, 5 нулей, small -2.44%, zzz -0.12%, corpus-all -1.37%
+WITNESS: vs 4eb8807 (idx 285, distance 19) median -4.540918496848275, spread 17.24296793655882 -> 17.2, canary +0.33%, 4 нулей, small -2.44%, zzz -0.50%, corpus-all -0.69%
+WITNESS: vs fd7e926 (idx 282, distance 22) median 0.0, spread 8.559638973261187 -> 8.6, canary +2.12%, 7 нулей, small +2.56%, zzz +4.55%, corpus-all -4.49%
+WITNESS: vs 87d7d86 (idx 231, distance 73) median -4.36018880340561, spread 6.989247311827956 -> 7.0, canary +0.16%, 6 нулей, small -2.44%, zzz -4.67%, corpus-all -0.86%
+--- ПАРА (машина судит отдельно) ---
+PAIR: vs 33c89cc (idx 296, distance 8) median -4.651162790697675, spread 7.9478378873651 -> 7.9, canary -3.00%, 5 нулей, small -5.88%, zzz -3.81%, corpus-all -4.97%
+--- контраст чужих классов/форм (ожидание ШИРОКИХ) ---
+CONTRAST: vs 7676353 (idx 303, distance 1) median -49.257586632862726, spread 13.307623045843897 -> 13.3, canary -44.12%, 0 нулей, small -44.06%, zzz -43.89%, corpus-all -52.80%
+CONTRAST: vs 86b4cf4 (idx 302, distance 2) median -49.6987951807229, spread 15.518341307814993 -> 15.5, canary -43.97%, 0 нулей, small -45.58%, zzz -49.46%, corpus-all -54.95%
+CONTRAST: vs a4241de (idx 301, distance 3) median -34.96014653081572, spread 17.1537907033694 -> 17.2, canary -29.00%, 0 нулей, small -29.82%, zzz -34.59%, corpus-all -41.61%
+CONTRAST: vs 68f8b0a (idx 300, distance 4) median -49.333333333333336, spread 13.619721083687807 -> 13.6, canary -43.92%, 0 нулей, small -44.06%, zzz -44.44%, corpus-all -51.72%
+CONTRAST: vs fe76381 (idx 299, distance 5) median -48.5023457235655, spread 25.92415699146838 -> 25.9, canary -39.61%, 0 нулей, small -38.46%, zzz -68.90%, corpus-all -38.28%
