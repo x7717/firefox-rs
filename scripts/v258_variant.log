@@ -1,0 +1,28 @@
+=== ПАРА f800b14 (idx 278) vs c67c126 (idx 277) ===
+n=75 median=0.04903053804160903 p10=-1.2048192771084338 p90=1.8611026699375934
+spread=3.0659219470460273 canary-vs-пара=0.1809332151148032 (cur 1361524 vs 1359065)
+НУЛИ 14: parse/foxjson/small, parse/foxurl/0, parse/foxurl/3, parse/foxurl/4, parse/foxurl/6, parse/url_crate/6, parse/foxurl/8, parse/foxurl/9, parse/foxurl/12, parse/foxurl/13, serialize/foxurl/0, serialize/foxurl/2, serialize/foxurl/3, serialize/foxurl/4
+fp max |f1-f2|=1.1102230246251565e-14 (worst parse/url_crate/4)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 3.0659219470460 INSIDE: True
+
+=== ВАРИАНТ-ПАРА f800b14 vs f3a9631 (idx 259) ===
+n=75 median=0.0 p10=-1.0983775647680578 p90=0.9708737864077669
+spread=2.069251351175825 canary-vs-пара=0.2098370984041046 (cur 1361524 vs 1358673)
+НУЛИ 17: parse/foxjson/small, parse/url_crate/0, parse/url_crate/1, parse/foxurl/3, parse/url_crate/3, parse/foxurl/4, parse/foxurl/5, parse/url_crate/5, parse/foxurl/6, parse/foxurl/8, parse/foxurl/9, parse/foxurl/10, parse/foxurl/11, serialize/foxurl/0, serialize/foxurl/2, serialize/foxurl/3, serialize/foxurl/4
+fp max |f1-f2|=1.099120794378905e-14 (worst find/std/https://example.com/search?q=firefox+rust&lang=ru)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 2.0692513511758 INSIDE: False
+
+canary-vs-CLASSIC-якорь d70534f (1356121): 0.39841577558344715 -> +0.40%
+
+профиль exact f800b14: 5.7288744083835465e-05 = 78/1361524
+OLD-коридор 5.25-5.91e-05: INSIDE True; NEW-порог 6.55e-05: False
+профиль пары c67c126: 5.665659847027184e-05 — SAME-PROFILE Δ 1.115749322464734%
+
+=== corpus-all (parse/foxurl) CLASSIC-записей (последние 10) ===
+b59846a 1196, 8517f04 1183, 8874e22 1186, 39d2fa2 1182, b884706 1187, f821146 1188, 680b8e9 930, 3215b78 1273, c67c126 1186, f800b14 1178
+f800b14 corpus-all: 1178
+
+=== find/foxsearch/zzz-absent-zzz конверт по CLASSIC-записям ===
+CLASSIC записей с zzz: 162; нормальных (<300k): 147, патологических (>=300k): 15
+нормальный конверт: min 203811, max 231085, медиана 207107
+f800b14 zzz 208552 rank: 109/147 (vs медиана 0.6977069823810881%)
