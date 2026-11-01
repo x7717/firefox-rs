@@ -1,0 +1,15 @@
+=== ВАРИАНТ-СВИДЕТЕЛЬСТВО ОКНА 293 (581d0fb, CLASSIC OLD-канон) ===
+--- ПАРА (машина судит отдельно) ---
+PAIR: vs 7676353 (idx 303, distance 2) median -0.05534340583319497, spread 2.290341237709659 -> 2.3, canary -0.11%, 17 нулей, small +2.80%, zzz -0.29%, corpus-all -3.70%
+--- same-form OLD-канон свидетели (ожидание УЗКИХ) ---
+WITNESS: vs 68f8b0a (idx 300, distance 5) median 0.0, spread 3.6468728005476336 -> 3.6, canary +0.25%, 12 нулей, small +2.80%, zzz -1.26%, corpus-all -1.51%
+WITNESS: vs b94692e (idx 297, distance 8) median -0.2777022565735814, spread 4.532681465821001 -> 4.5, canary +0.33%, 4 нулей, small +2.80%, zzz +0.16%, corpus-all -1.01%
+WITNESS: vs d092b80 (idx 283, distance 22) median 0.0, spread 3.2100840336134455 -> 3.2, canary -0.31%, 12 нулей, small +2.08%, zzz +0.17%, corpus-all -2.74%
+WITNESS: vs d70534f (idx 66, distance 239) median 0.149210885081422, spread 3.426439972241499 -> 3.4, canary +0.28%, 16 нулей, small +2.80%, zzz +0.57%, corpus-all -0.93%
+--- контраст чужих классов/форм (ожидание ШИРОКИХ) ---
+CONTRAST: vs 6370dbb (idx 304, distance 1) median 97.36842105263158, spread 51.50200842800463 -> 51.5, canary +78.76%, 0 нулей, small +83.75%, zzz +77.72%, corpus-all +104.01%
+CONTRAST: vs 86b4cf4 (idx 302, distance 3) median -0.5999936340197982, spread 29.650496562261267 -> 29.7, canary +0.16%, 1 нулей, small +0.00%, zzz -10.19%, corpus-all -8.08%
+CONTRAST: vs a4241de (idx 301, distance 4) median 28.138163024930424, spread 39.08246225319395 -> 39.1, canary +26.92%, 0 нулей, small +28.95%, zzz +16.24%, corpus-all +19.13%
+CONTRAST: vs fe76381 (idx 299, distance 6) median 8.053610961526955, spread 51.77229071797352 -> 51.8, canary +7.95%, 1 нулей, small +13.08%, zzz -44.72%, corpus-all +25.91%
+CONTRAST: vs b74d5b2 (idx 298, distance 7) median 9.967845659163988, spread 53.31137975223826 -> 53.3, canary +11.15%, 0 нулей, small +23.53%, zzz -37.47%, corpus-all +19.73%
+CONTRAST: vs 33c89cc (idx 296, distance 9) median 85.1063829787234, spread 58.317158385093165 -> 58.3, canary +73.39%, 0 нулей, small +72.94%, zzz +70.95%, corpus-all +93.87%

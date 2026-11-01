@@ -1,0 +1,37 @@
+=== АНАТОМИЯ точки #306 (581d0fb, CLASSIC OLD-канон, 160-й визит) ===
+--- ПАРА (581d0fb vs 7676353 — вердикт машины) ---
+ПАРА: vs 7676353 (idx 303, distance 2) [CLASSIC canary 1361339]: median -0.05534340583319497, разброс 2.290341237709659 -> 2.3 п.п., canary -0.11%, 17 нулей, 0 флагов, small 143->147 +2.80%, zzz 208827->208231 -0.29%, corpus-all 1216->1171 -3.70%, serialize/foxurl/3 4->4
+   min 4: serialize/foxurl/6 -10.3 / parse/foxurl/corpus-all -3.7 / serialize/foxurl/dirty-all -2.2 / canonical/foxurl/dirty-all -1.9
+   top 4: multi/foxsearch-multi/4 +7.2 / parse/url_crate/6 +3.3 / parse/foxjson/small +2.8 / parse/serde_json/small +2.7
+--- same-form OLD-канон свидетели (ожидание УЗКИХ) ---
+SAME-FORM: vs 68f8b0a (idx 300, distance 5) [CLASSIC canary 1356551]: median 0.0, разброс 3.6468728005476336 -> 3.6 п.п., canary +0.25%, 12 нулей, 0 флагов, small 143->147 +2.80%, zzz 210896->208231 -1.26%, corpus-all 1189->1171 -1.51%, serialize/foxurl/3 4->4
+   min 4: serialize/foxurl/6 -18.1 / parse/url_crate/13 -5.9 / parse/url_crate/1 -5.0 / parse/url_crate/11 -4.7
+   top 4: multi/foxsearch-multi/4 +7.1 / serialize/foxurl/2 +3.6 / classifier/naive-fox/8 +3.0 / parse/foxjson/small +2.8
+SAME-FORM: vs b94692e (idx 297, distance 8) [CLASSIC canary 1355496]: median -0.2777022565735814, разброс 4.532681465821001 -> 4.5 п.п., canary +0.33%, 4 нулей, 0 флагов, small 143->147 +2.80%, zzz 207906->208231 +0.16%, corpus-all 1183->1171 -1.01%, serialize/foxurl/3 4->4
+   min 4: serialize/foxurl/6 -7.7 / parse/foxurl/13 -4.0 / parse/foxurl/6 -3.9 / parse/foxurl/3 -3.8
+   top 4: multi/foxsearch-multi/4 +6.4 / serialize/foxurl/0 +5.0 / serialize/foxurl/2 +3.6 / parse/foxjson/small +2.8
+SAME-FORM: vs d092b80 (idx 283, distance 22) [CLASSIC canary 1364127]: median 0.0, разброс 3.2100840336134455 -> 3.2 п.п., canary -0.31%, 12 нулей, 0 флагов, small 144->147 +2.08%, zzz 207879->208231 +0.17%, corpus-all 1204->1171 -2.74%, serialize/foxurl/3 4->4
+   min 4: serialize/foxurl/6 -12.1 / serialize/foxurl/dirty-all -2.9 / parse/foxurl/corpus-all -2.7 / parse/url_crate/9 -2.7
+   top 4: multi/foxsearch-multi/4 +6.3 / parse/url_crate/6 +2.5 / serialize/foxurl/0 +2.4 / parse/foxjson/small +2.1
+SAME-FORM: vs d70534f (idx 66, distance 239) [CLASSIC canary 1356121]: median 0.149210885081422, разброс 3.426439972241499 -> 3.4 п.п., canary +0.28%, 16 нулей, 0 флагов, small 143->147 +2.80%, zzz 207045->208231 +0.57%, corpus-all 1182->1171 -0.93%, serialize/foxurl/3 4->4
+   min 4: serialize/foxurl/6 -13.2 / serialize/foxurl/dirty-all -6.5 / parse/serde_json/strs-5000 -2.8 / serialize/foxurl/1 -2.3
+   top 4: multi/foxsearch-multi/4 +6.4 / serialize/foxurl/0 +5.0 / serialize/foxurl/2 +3.6 / parse/foxjson/small +2.8
+--- КОНТРАСТ чужих классов/форм (ожидание ШИРОКИХ) ---
+ЧУЖОЙ-КЛАСС: vs 6370dbb (idx 304, distance 1) [FAST canary 760737]: median 97.36842105263158, разброс 51.50200842800463 -> 51.5 п.п., canary +78.76%, 0 нулей, 75 флагов, small 80->147 +83.75%, zzz 117171->208231 +77.72%, corpus-all 574->1171 +104.01%, serialize/foxurl/3 2->4
+   min 4: parse/serde_json/strs-5000 +51.4 / parse/serde_json/small +56.1 / parse/serde_json/nums-5000 +60.8 / multi/foxsearch-multi/2 +61.1
+   top 4: classifier/naive-std/8 +166.1 / parse/url_crate/7 +139.3 / parse/url_crate/13 +132.9 / parse/url_crate/11 +125.8
+ЧУЖОЙ-КЛАСС: vs 86b4cf4 (idx 302, distance 3) [CLASSIC canary 1357706]: median -0.5999936340197982, разброс 29.650496562261267 -> 29.7 п.п., canary +0.16%, 1 нулей, 1 флагов, small 147->147 +0.00%, zzz 231854->208231 -10.19%, corpus-all 1274->1171 -8.08%, serialize/foxurl/3 19->4
+   min 4: serialize/foxurl/3 -78.9 / parse/foxurl/2 -19.6 / parse/foxurl/10 -19.0 / parse/foxurl/11 -18.9
+   top 4: classifier/naive-std/8 +27.8 / parse/url_crate/12 +19.1 / parse/url_crate/6 +18.7 / classifier/naive-std/32 +18.0
+ЧУЖОЙ-КЛАСС: vs a4241de (idx 301, distance 4) [MEDIUM canary 1071504]: median 28.138163024930424, разброс 39.08246225319395 -> 39.1 п.п., canary +26.92%, 0 нулей, 51 флагов, small 114->147 +28.95%, zzz 179133->208231 +16.24%, corpus-all 983->1171 +19.13%, serialize/foxurl/3 3->4
+   min 4: parse/foxurl/10 +1.5 / parse/foxurl/4 +4.3 / parse/foxurl/2 +5.7 / parse/foxurl/0 +6.7
+   top 4: classifier/naive-std/8 +66.9 / parse/url_crate/12 +54.1 / classifier/naive-std/32 +53.4 / classifier/naive-fox/32 +53.2
+ЧУЖОЙ-КЛАСС: vs fe76381 (idx 299, distance 6) [CLASSIC canary 1259770]: median 8.053610961526955, разброс 51.77229071797352 -> 51.8 п.п., canary +7.95%, 1 нулей, 7 флагов, small 130->147 +13.08%, zzz 376702->208231 -44.72%, corpus-all 930->1171 +25.91%, serialize/foxurl/3 4->4
+   min 4: multi/naive-fox/2 -45.2 / find/foxsearch/zzz-absent-zzz -44.7 / find/foxsearch/Mozilla Corporation -44.5 / find/foxsearch/горячие пути -41.4
+   top 4: parse/foxurl/corpus-all +25.9 / serialize/foxurl/4 +24.6 / parse/foxurl/6 +22.5 / parse/foxurl/9 +21.4
+ЧУЖОЙ-КЛАСС: vs b74d5b2 (idx 298, distance 7) [CLASSIC canary 1223438]: median 9.967845659163988, разброс 53.31137975223826 -> 53.3 п.п., canary +11.15%, 0 нулей, 7 флагов, small 119->147 +23.53%, zzz 333012->208231 -37.47%, corpus-all 978->1171 +19.73%, serialize/foxurl/3 3->4
+   min 4: multi/naive-fox/4 -40.1 / find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru -40.1 / find/foxsearch/Mozilla Corporation -38.2 / find/foxsearch/горячие пути -37.5
+   top 4: serialize/foxurl/3 +33.3 / parse/foxjson/small +23.5 / parse/url_crate/12 +23.0 / classifier/foxsearch-multi/8 +22.9
+ЧУЖОЙ-КЛАСС: vs 33c89cc (idx 296, distance 9) [FAST canary 784289]: median 85.1063829787234, разброс 58.317158385093165 -> 58.3 п.п., canary +73.39%, 0 нулей, 75 флагов, small 85->147 +72.94%, zzz 121807->208231 +70.95%, corpus-all 604->1171 +93.87%, serialize/foxurl/3 2->4
+   min 4: parse/serde_json/strs-5000 +46.2 / parse/serde_json/session-5000 +47.9 / multi/foxsearch-multi/2 +49.8 / parse/serde_json/small +51.6
+   top 4: classifier/naive-std/8 +154.9 / parse/url_crate/7 +127.1 / parse/url_crate/13 +124.4 / parse/url_crate/0 +123.5

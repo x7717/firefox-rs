@@ -1,0 +1,36 @@
+записей в истории: 306
+коммитов-дублей: 10 ['2b6489b', '336e9ff', '415fe95', '628dd1f', '68e6dd4', '6a239dc', '76d4050', '87d7d86', 'f3a9631', 'ff7b23e']
+  белый список 10: СОВПАДАЕТ — НЕ расширяется (новых Store-дублей НЕТ)
+  точек (уникальных коммитов): 296
+
+судимая запись: idx 305 581d0fb [CLASSIC] canary=1359903
+пара (GUARD): 581d0fb [CLASSIC] vs 7676353 [CLASSIC] idx 305 vs 303, distance 2, 1 записей СМЕЖНЫХ классов between=['6370dbb [FAST]']
+
+ПРОФИЛЬ-СТРОКА (урок 229): канон-кластер CLASSIC 1345000-1375000: 160 визитов (включая судимую): 146 OLD-канон + 14 NEW-скошенных
+  OLD-канон конверты (из данных): профиль 5.5448e-05-5.8978e-05, zzz 203811-226663, small 143-208, corpus-all 1163-1228
+  судимая: canary 1359903 INSIDE (Дельта к паре -0.11%), zzz 208231 INSIDE, small 147 INSIDE, corpus-all 1171 INSIDE, профиль 5.6622e-05 [OLD] (160-й визит кластера)
+  профиль v11/canary: 581d0fb 5.6622e-05 [OLD] / 7676353 5.5827e-05 [OLD] — SAME-PROFILE (дискриминатор окна 229, порог 6.0e-05); CLASSIC-коридор 2.2..4.5 ПРИМЕНИМ (same-profile)
+
+сравнимых бенчей: n=75
+МЕДИАНА: -0.05534340583319497 (f2 -0.05534340583319697, |diff| 1.998e-15)
+  rank: [37] соседи -0.10548437971732243 / -0.05153497888974568
+P10: -1.5384615384615385 (f2 -1.538461538461533) deltas[7] соседи -1.5409424834259093 / -1.3485071650549079
+P90: 0.7518796992481203 (f2 0.7518796992481258) deltas[67] соседи 0.6322254335260116 / 0.8571428571428572
+SPREAD: 2.290341237709659 -> 2.3 п.п. (f2 2.2903412377097)
+CANARY-vs-ПАРА: -0.10548437971732243 -> -0.11% (cur 1359903 vs пара 1361339)
+НУЛИ: 17
+FP DUAL-FORMULA max |f1-f2|: 1.1102230246251565e-14 (worst parse/serde_json/nums-5000)
+НУЛИ-СПИСОК: parse/foxurl/0, parse/foxurl/1, parse/url_crate/1, parse/foxurl/2, parse/foxurl/3, parse/foxurl/4, parse/foxurl/6, parse/foxurl/7, parse/foxurl/8, parse/foxurl/9, parse/foxurl/10, parse/foxurl/12, parse/foxurl/13, serialize/foxurl/0, serialize/foxurl/2, serialize/foxurl/3, serialize/foxurl/5
+ДИАПАЗОН: -10.273972602739725 .. 7.212274708446224
+min 4 пары: serialize/foxurl/6 -10.3 / parse/foxurl/corpus-all -3.7 / serialize/foxurl/dirty-all -2.2 / canonical/foxurl/dirty-all -1.9
+top 4 пары: multi/foxsearch-multi/4 +7.2 / parse/url_crate/6 +3.3 / parse/foxjson/small +2.8 / parse/serde_json/small +2.7
+
+ФЛАГИ (>20%): 0
+КОНТРОЛ serialize/foxurl/3: пара 4 -> 4
+ОТНОШЕНИЯ (крейт-медианы): foxjson -0.7% | foxsearch +0.1% | foxurl +0.5%   exact: foxjson=-0.6948007451675231, foxsearch=0.06914723249453747, foxurl=0.5434782608695565
+suppressed: [], elevated: [], top foxurl +0.54%, span 1.2382790060370796 -> 1
+
+ПРОГНОЗ ВЕРДИКТА:
+  флагов 0 -> УРОК 148: exit 0 ДО spread-ветки; ТИХИЙ ПАРИТЕТ exit 0 (|cvar| < 3 И spread <= 20)
+РЕЕСТР-КАНДИДАТ (201-й): median -0.05534340583319497 — НЕ материализуется (реестр остаётся 83, серия 0)
+СЧЁТЧИК corpus-all: 1216 -> 1171 -3.7006578947368416% — ниже порога +8.0, счётчик СТОИТ (14)
