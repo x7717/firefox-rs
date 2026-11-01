@@ -1,0 +1,28 @@
+=== ПАРА 809fea1 (idx 281) vs 12047b1 (idx 280) ===
+n=75 median=-0.23058894173876235 p10=-1.5384615384615385 p90=0.7563118674229785
+spread=2.2947734058845173 canary-vs-пара=0.08506632964197018 (cur 1358919 vs 1357764)
+НУЛИ 14: parse/foxjson/small, parse/foxurl/0, parse/foxurl/2, parse/foxurl/3, parse/foxurl/5, parse/foxurl/6, parse/foxurl/7, parse/foxurl/8, parse/foxurl/9, parse/url_crate/11, parse/foxurl/13, serialize/foxurl/0, serialize/foxurl/3, serialize/foxurl/4
+fp max |f1-f2|=1.0505485370515544e-14 (worst parse/foxjson/session-5000)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 2.2947734058845 INSIDE: True
+
+=== ВАРИАНТ-ПАРА 809fea1 vs f3a9631 (idx 259) ===
+n=75 median=-0.01331704723949618 p10=-1.2285012285012284 p90=0.7692307692307693
+spread=1.9977319977319978 canary-vs-пара=0.018105901861595837 (cur 1358919 vs 1358673)
+НУЛИ 14: parse/foxjson/small, parse/foxurl/1, parse/foxurl/3, parse/foxurl/4, parse/foxurl/5, parse/foxurl/6, parse/foxurl/8, parse/foxurl/9, parse/url_crate/9, parse/foxurl/10, serialize/foxurl/0, serialize/foxurl/1, serialize/foxurl/3, serialize/foxurl/4
+fp max |f1-f2|=9.950373858202965e-15 (worst parse/foxjson/nums-5000)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 1.9977319977320 INSIDE: False
+
+canary-vs-CLASSIC-якорь d70534f (1356121): 0.20632377199379703 -> +0.21%
+
+профиль exact 809fea1: 5.592680652783573e-05 = 76/1358919
+OLD-коридор 5.25-5.91e-05: INSIDE True; NEW-порог 6.55e-05: False
+профиль пары 12047b1: 5.671088642798012e-05 — SAME-PROFILE Δ -1.3825915084930556%
+
+=== corpus-all (parse/foxurl) CLASSIC-записей (последние 10) ===
+39d2fa2 1182, b884706 1187, f821146 1188, 680b8e9 930, 3215b78 1273, c67c126 1186, f800b14 1178, 8be002a 1179, 12047b1 1186, 809fea1 1182
+809fea1 corpus-all: 1182
+
+=== find/foxsearch/zzz-absent-zzz конверт по CLASSIC-записям ===
+CLASSIC записей с zzz: 165; нормальных (<300k): 150, патологических (>=300k): 15
+нормальный конверт: min 203811, max 231085, медиана 207102.0
+809fea1 zzz 206489 rank: 44/150 (vs медиана -0.2959894158434008%)

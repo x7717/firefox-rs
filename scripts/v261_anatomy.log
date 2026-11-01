@@ -1,0 +1,7 @@
+якорь d70534f canary=1356121, точка 809fea1 canary=1358919
+canary-vs-якорь: 0.20632377199379703 -> +0.21%
+n=75: median 0.0, p10 -0.872093023255814, p90 1.0021474588403723, spread 1.8742404820961862 -> 1.9 п.п.
+пробоев (>20%): 0; нулей: 18 ['parse/foxjson/small', 'parse/foxurl/0', 'parse/url_crate/0', 'parse/foxurl/2', 'parse/foxurl/3', 'parse/url_crate/3', 'parse/foxurl/4', 'parse/foxurl/6', 'parse/foxurl/8', 'parse/foxurl/9', 'parse/foxurl/10', 'parse/foxurl/11', 'parse/url_crate/11', 'parse/foxurl/13', 'parse/foxurl/corpus-all', 'serialize/foxurl/0', 'serialize/foxurl/3', 'serialize/foxurl/4']
+min 4 против якоря: serialize/foxurl/6 -13.2; serialize/foxurl/dirty-all -8.4; parse/serde_json/strs-5000 -2.9; parse/foxurl/12 -1.5
+top 5 против якоря: canonical/foxurl/dirty-all +2.0; parse/url_crate/7 +2.0; classifier/naive-std/32 +2.5; serialize/foxurl/2 +3.6; classifier/naive-std/8 +4.1
+ОТНОШЕНИЯ против якоря: foxjson +0.53 | foxsearch -0.45 | foxurl +0.00
