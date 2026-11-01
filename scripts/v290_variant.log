@@ -1,0 +1,10 @@
+=== ВАРИАНТ-СВИДЕТЕЛЬСТВО ОКНА 290 (a4241de, канон MEDIUM ~1071k) ===
+--- same-form MEDIUM свидетели (ожидание УЗКИХ) ---
+WITNESS: vs b15f7d3 (idx 288, distance 13) median 0.002517137511222238, spread 3.722617566195358 -> 3.7, canary +0.04%, 9 нулей, small +0.00%, zzz +0.45%, corpus-all -2.19%
+WITNESS: vs 87ec41e (idx 268, distance 33) median 0.0, spread 2.9271078746341113 -> 2.9, canary +0.39%, 12 нулей, small +0.00%, zzz +0.14%, corpus-all -1.70%
+WITNESS: vs 45afa12 (idx 252, distance 49) median -0.03777619627432264, spread 3.3012009134379303 -> 3.3, canary +0.24%, 8 нулей, small -0.87%, zzz +0.20%, corpus-all -1.70%
+--- контраст чужих форм (ожидание ШИРОКИХ) ---
+CONTRAST: vs 68f8b0a (idx 300, distance 1) median -21.719279866946025, spread 23.673939955207377 -> 23.7, canary -21.01%, 0 нулей, small -20.28%, zzz -15.06%, corpus-all -17.33%
+CONTRAST: vs 33c89cc (idx 296, distance 5) median 49.09090909090909, spread 41.28779442915285 -> 41.3, canary +36.62%, 0 нулей, small +34.12%, zzz +47.06%, corpus-all +62.75%
+CONTRAST: vs 0cb508b (idx 295, distance 6) median -19.924812030075188, spread 52.91054083545605 -> 52.9, canary -11.94%, 4 нулей, small -3.39%, zzz -46.72%, corpus-all +2.08%
+CONTRAST: vs fe76381 (idx 299, distance 2) median -22.514619883040936, spread 53.426508188242686 -> 53.4, canary -14.94%, 0 нулей, small -12.31%, zzz -52.45%, corpus-all +5.70%

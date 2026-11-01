@@ -1,0 +1,24 @@
+=== АНАТОМИЯ точки #302 (a4241de, канон MEDIUM ~1071k) ===
+--- same-form канон-MEDIUM свидетели ---
+SAME-FORM: vs b15f7d3 (idx 288, distance 13) [MEDIUM canary 1071072]: median 0.002517137511222238, разброс 3.722617566195358 -> 3.7 п.п., canary +0.04%, 9 нулей, 0 пробелов(флагов), small 114->114 +0.00%, zzz 178332->179133 +0.45%, corpus-all 1005->983 -2.19%
+   min 4: 11 -9.0 / 1 -7.3 / 5 -4.2 / 0 -3.2
+   top 4: serialize/foxurl/6 +12.1 / parse/url_crate/11 +3.9 / parse/serde_json/session-5000 +2.0 / parse/url_crate/5 +1.9
+SAME-FORM: vs 87ec41e (idx 268, distance 33) [MEDIUM canary 1067291]: median 0.0, разброс 2.9271078746341113 -> 2.9 п.п., canary +0.39%, 12 нулей, 0 пробелов(флагов), small 114->114 +0.00%, zzz 178876->179133 +0.14%, corpus-all 1000->983 -1.70%
+   min 4: 1 -7.3 / 11 -6.6 / 0 -3.2 / 6 -1.8
+   top 4: parse/url_crate/11 +3.2 / canonical/url_crate/dirty-all +2.9 / parse/url_crate/6 +1.8 / serialize/foxurl/4 +1.8
+SAME-FORM: vs 45afa12 (idx 252, distance 49) [MEDIUM canary 1068947]: median -0.03777619627432264, разброс 3.3012009134379303 -> 3.3 п.п., canary +0.24%, 8 нулей, 0 пробелов(флагов), small 115->114 -0.87%, zzz 178784->179133 +0.20%, corpus-all 1000->983 -1.70%
+   min 4: 7 -11.3 / 1 -8.4 / 11 -7.8 / 5 -4.2
+   top 4: parse/url_crate/11 +3.5 / serialize/foxurl/6 +2.8 / parse/url_crate/6 +2.4 / parse/foxurl/12 +1.7
+--- КОНТРАСТ чужих форм/классов ---
+ЧУЖАЯ-ФОРМА: vs 68f8b0a (idx 300, distance 1) [CLASSIC canary 1356551]: median -21.719279866946025, разброс 23.673939955207377 -> 23.7 п.п., canary -21.01%, 0 нулей, 0 пробелов(флагов), small 143->114 -20.28%, zzz 210896->179133 -15.06%, corpus-all 1189->983 -17.33%
+   min 4: 8 -41.1 / 13 -36.8 / 12 -35.1 / 32 -34.8
+   top 4: parse/foxurl/10 -2.9 / parse/foxurl/4 -4.1 / parse/foxurl/2 -4.1 / parse/foxurl/12 -6.2
+ЧУЖАЯ-ФОРМА: vs 33c89cc (idx 296, distance 5) [FAST canary 784289]: median 49.09090909090909, разброс 41.28779442915285 -> 41.3 п.п., canary +36.62%, 0 нулей, 68 пробелов(флагов), small 85->114 +34.12%, zzz 121807->179133 +47.06%, corpus-all 604->983 +62.75%
+   min 4: session-5000 +14.5 / small +15.3 / 2 +15.5 / strs-5000 +16.5
+   top 4: parse/foxurl/8 +78.3 / parse/foxurl/10 +71.8 / parse/foxurl/12 +71.4 / parse/foxurl/0 +71.4
+ЧУЖАЯ-ФОРМА: vs 0cb508b (idx 295, distance 6) [CLASSIC canary 1216790]: median -19.924812030075188, разброс 52.91054083545605 -> 52.9 п.п., canary -11.94%, 4 нулей, 0 пробелов(флагов), small 118->114 -3.39%, zzz 336224->179133 -46.72%, corpus-all 963->983 +2.08%
+   min 4: search?q=firefox+rust&lang=ru -51.3 / 4 -49.7 / 2 -48.0 / 8 -47.1
+   top 4: parse/foxurl/10 +17.5 / parse/foxurl/3 +15.0 / parse/foxurl/4 +14.8 / parse/foxurl/9 +11.6
+ЧУЖАЯ-ФОРМА: vs fe76381 (idx 299, distance 2) [CLASSIC canary 1259770]: median -22.514619883040936, разброс 53.426508188242686 -> 53.4 п.п., canary -14.94%, 0 нулей, 0 пробелов(флагов), small 130->114 -12.31%, zzz 376702->179133 -52.45%, corpus-all 930->983 +5.70%
+   min 4: 2 -53.2 / Mozilla Corporation -52.7 / zzz-absent-zzz -52.4 / 2 -51.5
+   top 4: parse/foxurl/10 +15.5 / parse/foxurl/4 +12.9 / parse/foxurl/3 +11.3 / parse/foxurl/0 +11.1

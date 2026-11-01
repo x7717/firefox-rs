@@ -1,0 +1,28 @@
+записей в истории: 302
+коммитов-дублей: 10 ['2b6489b', '336e9ff', '415fe95', '628dd1f', '68e6dd4', '6a239dc', '76d4050', '87d7d86', 'f3a9631', 'ff7b23e']
+  белый список 10: СОВПАДАЕТ — НЕ расширяется (новых Store-дублей НЕТ)
+  точек (уникальных коммитов): 292
+
+судимая запись: idx 301 a4241de [MEDIUM] canary=1071504
+пара (GUARD): a4241de [MEDIUM] vs f92d0dd [MEDIUM] idx 301 vs 294, distance 7, between=['0cb508b [CLASSIC]', '33c89cc [FAST]', 'b94692e [CLASSIC]', 'b74d5b2 [CLASSIC]', 'fe76381 [CLASSIC]', '68f8b0a [CLASSIC]']
+
+ПРОФИЛЬ-СТРОКА (урок 229): канонический MEDIUM-кластер 1060000-1080000: 41 визитов (включая судимую)
+  canary envelope 1061107-1074132; zzz envelope 178125-179809; corpus-all envelope 976-1152; профиль envelope 6.5533e-05-8.4385e-05
+  судимая: canary 1071504 INSIDE, zzz 179133 INSIDE, small 114 канон, corpus-all 983 INSIDE, профиль 6.6262e-05 [NEW]
+  профиль v11/canary: a4241de 6.6262e-05 [NEW] / f92d0dd 7.1941e-05 [NEW] — SAME-PROFILE (дискриминатор окна 229, порог 6.0e-05); ФОРМА ОДНА (канонический MEDIUM ~1071k vs ~1070k) — ОДНОФОРМАЛЬНАЯ пара, ПЕРВАЯ после серии кросс-формальных 284/286/287/288/289
+
+сравнимых бенчей: n=75
+МЕДИАНА: 0.12762642851141107 (f2 0.12762642851140704, |diff| 4.025e-15)
+  rank: [37] соседи 0.12351964212687469 / 0.17237824518946396
+P10: -1.4705882352941175 (f2 -1.4705882352941124) deltas[7] соседи -2.2222222222222223 / -1.4492753623188406
+P90: 1.5384615384615385 (f2 1.538461538461533) deltas[67] соседи 1.4705882352941175 / 1.6528925619834711
+SPREAD: 3.009049773755656 -> 3.0 п.п. (f2 3.0090497737556)
+CANARY-vs-ПАРА: 0.11052758938673538 -> +0.11% (cur 1071504 vs пара 1070321)
+НУЛИ: 12
+FP DUAL-FORMULA max |f1-f2|: 1.1074474670635936e-14 (worst find/std/https://example.com/search?q=firefox+rust&lang=ru)
+НУЛИ-СПИСОК: parse/foxjson/small, parse/url_crate/5, parse/foxurl/8, parse/foxurl/9, parse/foxurl/10, parse/foxurl/12, parse/url_crate/12, parse/url_crate/13, serialize/foxurl/0, serialize/foxurl/1, serialize/foxurl/3, serialize/foxurl/5
+ДИАПАЗОН: -8.433734939759036 .. 13.26530612244898
+
+ФЛАГИ (>20%): 0
+ОТНОШЕНИЯ (крейт-медианы): foxjson -0.1% | foxsearch -0.2% | foxurl -0.3%   exact: foxjson=-0.11031340839274817, foxsearch=-0.22583054960170212, foxurl=-0.34965034965035446
+suppressed: [], elevated: [], top foxjson -0.11%, span 0.2393369412576063 -> 0
