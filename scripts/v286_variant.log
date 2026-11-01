@@ -1,0 +1,7 @@
+vs e915c61 (idx 293, distance 4, same-form OLD-подформа): median 0.3770540756158327, spread 4.116727462219906 -> 4.1, canary +0.27%, нулей 5, small 143 vs 153 -6.54%, zzz +0.42%, corpus-all -0.34%, FP max |f1-f2| 1.1102230246251565e-14 (multi/naive-fox/4)
+vs ef95f29 (idx 289, distance 8, same-form OLD-подформа): median 0.0, spread 4.292497625830959 -> 4.3, canary -0.36%, нулей 5, small 143 vs 150 -4.67%, zzz -0.05%, corpus-all +0.17%, FP max |f1-f2| 1.1102230246251565e-14 (parse/foxurl/12)
+vs c0747e1 (idx 284, distance 13, same-form OLD-подформа): median 0.0819059581692574, spread 4.691519161362713 -> 4.7, canary -0.44%, нулей 4, small 143 vs 144 -0.69%, zzz -1.10%, corpus-all -0.25%, FP max |f1-f2| 1.1102230246251565e-14 (parse/url_crate/9)
+same-host разброс OLD-подформы: 4.1-4.7 п.п.
+vs b1bf50c (idx 287, distance 10, КОНТРАСТ чужая форма): median 8.040225378527602, spread 53.34248731743552 -> 53.3, canary +7.49%, нулей 1, small 143 vs 131 +9.16%, zzz -42.15%, corpus-all +27.20%, FP max |f1-f2| 1.0658141036401503e-14 (classifier/naive-fox/8)
+vs 680b8e9 (idx 275, distance 22, КОНТРАСТ чужая форма): median 7.857398354596399, spread 59.074010444022306 -> 59.1, canary +7.55%, нулей 1, small 143 vs 130 +10.00%, zzz -40.84%, corpus-all +27.20%, FP max |f1-f2| 1.0658141036401503e-14 (parse/foxurl/0)
+vs 0cb508b (idx 295, distance 2, КОНТРАСТ чужая форма): median 11.399337601393832, spread 57.30336775084167 -> 57.3, canary +11.40%, нулей 0, small 143 vs 118 +21.19%, zzz -38.16%, corpus-all +22.85%, FP max |f1-f2| 1.2434497875801753e-14 (parse/foxurl/13)
