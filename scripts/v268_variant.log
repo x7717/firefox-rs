@@ -1,0 +1,22 @@
+
+== ВАРИАНТ-ПАРА MEDIUM-хост vs итерация 259: b15f7d3 (idx 288) vs 87ec41e (idx 268, distance 20) ==
+n=75 median -0.04306706191841062 (rank [37]) p10 -1.2195121951219512 p90 2.272727272727273 spread 3.492239467849224 -> 3.5 п.п.
+canary-vs-вариант 0.3542613963764334 -> +0.35% (cur 1071072 vs 1067291)
+  parse/foxurl/corpus-all: 1005 vs 1000 -> +0.50%
+  parse/foxjson/small: 114 vs 114 -> +0.00%
+  find/foxsearch/zzz-absent-zzz: 178332 vs 178876 -> -0.30%
+  parse/foxurl/11: 78 vs 76 -> +2.63%
+НУЛИ: 12 ['parse/foxjson/small', 'parse/foxurl/1', 'parse/url_crate/1', 'parse/url_crate/4', 'parse/foxurl/7', 'parse/foxurl/12', 'serialize/foxurl/0', 'serialize/foxurl/1', 'serialize/foxurl/2', 'serialize/foxurl/3', 'serialize/foxurl/5', 'serialize/foxurl/dirty-all']
+FP DUAL-FORMULA max |f1-f2|: 1.0658141036401503e-14 (worst parse/foxurl/corpus-all)
+
+== CROSS-CHECK MEDIUM-хост vs итерация 244: b15f7d3 (idx 288) vs 45afa12 (idx 252, distance 36) ==
+n=75 median 0.0 (rank [36]) p10 -1.5873015873015872 p90 1.2987012987012987 spread 2.8860028860028857 -> 2.9 п.п.
+canary-vs-вариант 0.19879376620169195 -> +0.20% (cur 1071072 vs 1068947)
+  parse/foxurl/corpus-all: 1005 vs 1000 -> +0.50%
+  parse/foxjson/small: 114 vs 115 -> -0.87%
+  find/foxsearch/zzz-absent-zzz: 178332 vs 178784 -> -0.25%
+  parse/foxurl/11: 78 vs 77 -> +1.30%
+НУЛИ: 13 ['parse/foxurl/0', 'parse/foxurl/2', 'parse/foxurl/4', 'parse/foxurl/5', 'parse/foxurl/7', 'parse/foxurl/9', 'parse/foxurl/10', 'parse/foxurl/12', 'parse/foxurl/13', 'parse/url_crate/13', 'serialize/foxurl/2', 'serialize/foxurl/3']
+FP DUAL-FORMULA max |f1-f2|: 1.0824674490095276e-14 (worst parse/foxjson/strs-5000)
+
+вариант-медианы: -0.04306706191841062 / 0.0 — в РЕЕСТР НЕ идут (вариант-медиана в реестр НЕ идёт, урок w278)
