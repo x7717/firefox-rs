@@ -1,0 +1,28 @@
+=== ПАРА fd7e926 (idx 282) vs 289a974 (idx 261) ===
+n=75 median=0.7282011357104397 p10=-5.0 p90=4.761904761904762
+spread=9.761904761904763 canary-vs-пара=3.7530483855917036 (cur 744950 vs 718003)
+НУЛИ 5: parse/foxurl/0, parse/foxurl/4, parse/foxurl/5, parse/foxurl/12, serialize/foxurl/3
+fp max |f1-f2|=1.1546319456101628e-14 (worst parse/foxjson/session-500)
+FAST-коридор 3.0..14.0 (прецедент w253): spread 9.7619047619048 INSIDE: True
+
+=== ВАРИАНТ-ПАРА fd7e926 vs bc328fa (idx 256) ===
+n=75 median=1.7857142857142856 p10=-1.2658227848101267 p90=5.5258944616892665
+spread=6.791717246499394 canary-vs-пара=3.5910257729521664 (cur 744950 vs 719126)
+НУЛИ 9: parse/foxurl/0, parse/foxurl/5, parse/foxurl/7, parse/foxurl/13, serialize/foxurl/2, serialize/foxurl/3, serialize/foxurl/4, serialize/foxurl/5, serialize/foxurl/dirty-all
+fp max |f1-f2|=1.021405182655144e-14 (worst parse/serde_json/nums-5000)
+FAST-коридор 3.0..14.0 (прецедент w253): spread 6.7917172464994 INSIDE: True
+
+canary-vs-FAST-якорь 1c96db6 (720876): 3.33954799438461 -> +3.34%
+
+профиль exact fd7e926: 5.6379622793476075e-05 = 42/744950
+OLD-коридор 5.25-5.91e-05: INSIDE True; NEW-порог 6.55e-05: False
+профиль пары 289a974: 5.571007363478983e-05 — SAME-PROFILE Δ 1.2018457614605043%
+
+=== corpus-all (parse/foxurl) FAST-записей (последние 10) ===
+915ea70 610, 87d7d86 579, 1c80b11 621, 1467f36 601, a383f78 703, 6259040 575, 7de3903 573, bc328fa 569, 289a974 578, fd7e926 601
+fd7e926 corpus-all: 601
+
+=== find/foxsearch/zzz-absent-zzz конверт по FAST-записям ===
+FAST записей с zzz: 66; нормальных (<300k): 58, патологических (>=300k): 8
+нормальный конверт: min 108773, max 159730, медиана 118875.0
+fd7e926 zzz 112077 rank: 9/58 (vs медиана -5.718611987381704%)

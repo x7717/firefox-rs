@@ -1,0 +1,7 @@
+якорь 1c96db6 canary=720876, точка fd7e926 canary=744950
+canary-vs-якорь: 3.33954799438461 -> +3.34%
+n=75: median 1.6666666666666667, p10 -2.9940119760479043, p90 5.108780003364609, spread 8.102791979412514 -> 8.1 п.п.
+пробоев (>20%): 0; нулей: 8 ['parse/foxurl/0', 'parse/foxurl/1', 'parse/foxurl/5', 'parse/foxurl/13', 'serialize/foxurl/2', 'serialize/foxurl/3', 'serialize/foxurl/4', 'serialize/foxurl/5']
+min 4 против якоря: parse/url_crate/6 -10.2; serialize/foxurl/6 -8.8; parse/url_crate/9 -5.3; parse/url_crate/2 -5.3
+top 5 против якоря: multi/naive-fox/4 +5.8; parse/serde_json/strs-5000 +5.9; find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru +6.6; classifier/foxsearch-multi/8 +7.1; parse/url_crate/10 +7.5
+ОТНОШЕНИЯ против якоря: foxjson +1.69 | foxsearch -1.97 | foxurl +1.23
