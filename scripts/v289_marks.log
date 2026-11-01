@@ -1,0 +1,35 @@
+CLASSIC в канон-кластере [1345000-1375000]: 157 записей (включая судимую); OLD-таг 144, NEW-скошенных 13 (f6ec292, 7a595f1, 3090369, 64a636a, 6a239dc, 81ac280, 40b8fd0, 87dc814, 87d7d86, eace4a8, d50c58c, 3215b78, e990865)
+68f8b0a = 157-й визит канона (доминирующая форма пула); недавняя эра (idx>=280): 11 членов: 12047b1, 809fea1, d092b80, c0747e1, e990865, ef95f29, cf857bd, 628dd1f, e915c61, b94692e, 68f8b0a
+кластер canary: 1351095-1374001 (Дельта 1.70%) — 1356551 INSIDE
+zzz-конверт канона: 203811-344989 — 210896 INSIDE
+small канона: 143-208 — 143 INSIDE
+corpus-all канона: 1163-1424 — 1189 INSIDE
+профиль-конверт канона (OLD-таг 144): 5.5448e-05-5.8978e-05 — 5.6024e-05 INSIDE
+
+АНАТОМИЯ против same-form канон b94692e (idx 297, canary 1355496): canary 0.07783128832545429 -> +0.08%
+  слои: median -0.28549120579803433 (НЕ-нуль), p10 -2.564102564102564, p90 3.082978025582158, разброс 5.647080589684721 -> 5.6 п.п.
+  пробои против (same-form канон, >20%): 0
+  нулей против same-form канон: 8
+  min: parse/foxurl/12 -4.5 / parse/foxurl/13 -4.0 / parse/foxurl/2 -3.9 / parse/foxurl/6 -3.9
+  top: serialize/foxurl/6 +12.7 / serialize/foxurl/0 +7.5 / parse/url_crate/13 +5.1 / parse/url_crate/1 +4.5 / parse/url_crate/11 +4.5
+ОТНОШЕНИЯ против same-form канон: foxjson +0.16 | foxsearch +1.60 | foxurl -2.40   exact: foxjson=0.16006743794498846, foxsearch=1.603843906930913, foxurl=-2.404692082111437
+corpus-all vs same-form канон: 1183 vs 1189 +0.51%
+
+АНАТОМИЯ против чужая форма 1260k b1bf50c (idx 287, canary 1261019): canary 7.575778001758896 -> +7.58%
+  слои: median 8.09968847352025 (НЕ-нуль), p10 -31.747137170922716, p90 20.37037037037037, разброс 52.11750754129309 -> 52.1 п.п.
+  пробои против (чужая форма 1260k, >20%): 8
+    +27.8% parse/foxurl/corpus-all
+    +25.4% parse/foxurl/5
+    +24.6% serialize/foxurl/4
+    +23.0% parse/foxurl/3
+    +22.9% serialize/foxurl/0
+    +22.5% parse/foxurl/6
+    +21.4% parse/foxurl/9
+    +20.4% serialize/foxurl/1
+  нулей против чужая форма 1260k: 1
+  min: multi/naive-fox/2 -42.6 / find/foxsearch/горячие пути -41.5 / find/foxsearch/zzz-absent-zzz -41.3 / find/foxsearch/Mozilla Corporation -41.2
+  top: parse/foxurl/corpus-all +27.8 / parse/foxurl/5 +25.4 / serialize/foxurl/4 +24.6 / parse/foxurl/3 +23.0 / serialize/foxurl/0 +22.9
+ОТНОШЕНИЯ против чужая форма 1260k: foxjson +10.69 | foxsearch -32.12 | foxurl +6.32   exact: foxjson=10.693496661299262, foxsearch=-32.122467180431, foxurl=6.323042037327764
+corpus-all vs чужая форма 1260k: 930 vs 1189 +27.85%
+
+ИТОГ-маркеры: same-form b94692e разброс 5.6 п.п. (УЗКИЙ — хост-идентичность), чужая форма 1260k b1bf50c разброс 52.1 п.п. (ШИРОКИЙ — другая форма)
