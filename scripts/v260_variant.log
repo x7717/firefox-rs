@@ -1,0 +1,28 @@
+=== ПАРА 12047b1 (idx 280) vs 8be002a (idx 279) ===
+n=75 median=0.016297220559962314 p10=-1.2195121951219512 p90=1.2048192771084338
+spread=2.424331472230385 canary-vs-пара=-0.1323953855794946 (cur 1357764 vs 1359564)
+НУЛИ 14: parse/foxjson/small, parse/foxurl/0, parse/url_crate/2, parse/foxurl/3, parse/foxurl/5, parse/foxurl/6, parse/foxurl/8, parse/foxurl/9, parse/foxurl/10, parse/foxurl/11, parse/foxurl/12, parse/foxurl/13, serialize/foxurl/1, serialize/foxurl/3
+fp max |f1-f2|=1.0227929614359255e-14 (worst find/foxsearch/Mozilla Corporation)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 2.4243314722304 INSIDE: True
+
+=== ВАРИАНТ-ПАРА 12047b1 vs f3a9631 (idx 259) ===
+n=75 median=0.0 p10=-1.2285012285012284 p90=1.379228891630141
+spread=2.6077301201313694 canary-vs-пара=-0.06690351541540901 (cur 1357764 vs 1358673)
+НУЛИ 14: parse/foxjson/small, parse/url_crate/1, parse/url_crate/2, parse/foxurl/3, parse/foxurl/5, parse/foxurl/6, parse/foxurl/8, parse/url_crate/8, parse/foxurl/9, serialize/foxurl/0, serialize/foxurl/2, serialize/foxurl/3, serialize/foxurl/4, serialize/foxurl/5
+fp max |f1-f2|=1.1046719095020308e-14 (worst parse/serde_json/nums-5000)
+CLASSIC-коридор 2.2..4.5 (same-profile): spread 2.6077301201314 INSIDE: True
+
+canary-vs-CLASSIC-якорь d70534f (1356121): 0.12115438076690796 -> +0.12%
+
+профиль exact 12047b1: 5.671088642798012e-05 = 77/1357764
+OLD-коридор 5.25-5.91e-05: INSIDE True; NEW-порог 6.55e-05: False
+профиль пары 8be002a: 5.6635803831228247e-05 — SAME-PROFILE Δ 0.13257090333813798%
+
+=== corpus-all (parse/foxurl) CLASSIC-записей (последние 10) ===
+8874e22 1186, 39d2fa2 1182, b884706 1187, f821146 1188, 680b8e9 930, 3215b78 1273, c67c126 1186, f800b14 1178, 8be002a 1179, 12047b1 1186
+12047b1 corpus-all: 1186
+
+=== find/foxsearch/zzz-absent-zzz конверт по CLASSIC-записям ===
+CLASSIC записей с zzz: 164; нормальных (<300k): 149, патологических (>=300k): 15
+нормальный конверт: min 203811, max 231085, медиана 207107
+12047b1 zzz 207749 rank: 91/149 (vs медиана 0.30998469390218586%)
