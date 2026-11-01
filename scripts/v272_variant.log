@@ -1,0 +1,72 @@
+
+== ВАРИАНТ-ПАРА canary-1220k vs w218: 0cb508b (idx 295) vs 5673db9 (idx 217, distance 78) ==
+n=75 median -0.9345794392523363 (rank [37]) p10 -2.5677228816196296 p90 2.7777777777777777 spread 5.345500659397407 -> 5.3 п.п.
+canary-vs-вариант -0.26188846584179315 -> -0.26% (cur 1216790 vs 1219985)
+  parse/foxurl/corpus-all: 963 vs 973 -> -1.03%
+  parse/foxjson/small: 118 vs 118 -> +0.00%
+  find/foxsearch/zzz-absent-zzz: 336224 vs 335095 -> +0.34%
+  parse/foxurl/11: 71 vs 71 -> +0.00%
+НУЛИ: 10
+FP DUAL-FORMULA max |f1-f2|: 1.0103029524088925e-14 (worst parse/serde_json/small)
+
+== CROSS-CHECK canary-1220k ка-близнец w171: 0cb508b (idx 295) vs 23129b8 (idx 170, distance 125) ==
+n=75 median 0.0 (rank [28]) p10 -1.629987706086486 p90 3.799192999004349 spread 5.429180705090835 -> 5.4 п.п.
+canary-vs-вариант 1.2804996812068525 -> +1.28% (cur 1216790 vs 1201406)
+  parse/foxurl/corpus-all: 963 vs 963 -> +0.00%
+  parse/foxjson/small: 118 vs 117 -> +0.85%
+  find/foxsearch/zzz-absent-zzz: 336224 vs 321865 -> +4.46%
+  parse/foxurl/11: 71 vs 71 -> +0.00%
+НУЛИ: 12
+FP DUAL-FORMULA max |f1-f2|: 1.1102230246251565e-14 (worst parse/url_crate/12)
+
+== same-form свидетель w188: 0cb508b (idx 295) vs dd9c671 (idx 187, distance 108) ==
+n=75 median -1.0011097752705078 (rank [37]) p10 -2.9850746268656714 p90 0.46728971962616817 spread 3.4523643464918394 -> 3.5 п.п.
+canary-vs-вариант -0.7245017011104131 -> -0.72% (cur 1216790 vs 1225670)
+  parse/foxurl/corpus-all: 963 vs 971 -> -0.82%
+  parse/foxjson/small: 118 vs 117 -> +0.85%
+  find/foxsearch/zzz-absent-zzz: 336224 vs 342227 -> -1.75%
+  parse/foxurl/11: 71 vs 71 -> +0.00%
+НУЛИ: 13
+FP DUAL-FORMULA max |f1-f2|: 1.0880185641326534e-14 (worst canonical/url_crate/dirty-all)
+
+== same-form свидетель w136: 0cb508b (idx 295) vs b73b531 (idx 135, distance 160) ==
+n=75 median -0.7633587786259541 (rank [37]) p10 -3.4165312718498826 p90 2.2273898827865293 spread 5.643921154636412 -> 5.6 п.п.
+canary-vs-вариант -0.14582702469375916 -> -0.15% (cur 1216790 vs 1218567)
+  parse/foxurl/corpus-all: 963 vs 974 -> -1.13%
+  parse/foxjson/small: 118 vs 118 -> +0.00%
+  find/foxsearch/zzz-absent-zzz: 336224 vs 331843 -> +1.32%
+  parse/foxurl/11: 71 vs 71 -> +0.00%
+НУЛИ: 9
+FP DUAL-FORMULA max |f1-f2|: 1.0658141036401503e-14 (worst find/foxsearch/zzz-absent-zzz)
+
+== same-form свидетель w91: 0cb508b (idx 295) vs 7e6ffe0 (idx 90, distance 205) ==
+n=75 median -0.7692374991830035 (rank [37]) p10 -2.631578947368421 p90 2.1212121212121215 spread 4.752791068580542 -> 4.8 п.п.
+canary-vs-вариант -0.43246118282429474 -> -0.43% (cur 1216790 vs 1222075)
+  parse/foxurl/corpus-all: 963 vs 976 -> -1.33%
+  parse/foxjson/small: 118 vs 118 -> +0.00%
+  find/foxsearch/zzz-absent-zzz: 336224 vs 330415 -> +1.76%
+  parse/foxurl/11: 71 vs 72 -> -1.39%
+НУЛИ: 7
+FP DUAL-FORMULA max |f1-f2|: 1.0880185641326534e-14 (worst canonical/url_crate/dirty-all)
+
+== КОНТРАСТ зона-930 w279 (ожидание ШИРОКОГО): 0cb508b (idx 295) vs b1bf50c (idx 287, distance 8) ==
+n=75 median -1.5015015015015014 (rank [37]) p10 -9.923664122137405 p90 6.329113924050633 spread 16.252778046188038 -> 16.3 п.п.
+canary-vs-вариант -3.507401553822742 -> -3.51% (cur 1216790 vs 1261019)
+  parse/foxurl/corpus-all: 963 vs 930 -> +3.55%
+  parse/foxjson/small: 118 vs 131 -> -9.92%
+  find/foxsearch/zzz-absent-zzz: 336224 vs 359407 -> -6.45%
+  parse/foxurl/11: 71 vs 68 -> +4.41%
+НУЛИ: 0
+FP DUAL-FORMULA max |f1-f2|: 1.1102230246251565e-14 (worst parse/foxurl/5)
+
+== КОНТРАСТ зона-930 w266 (ожидание ШИРОКОГО): 0cb508b (idx 295) vs 680b8e9 (idx 275, distance 20) ==
+n=75 median -3.004900902629538 (rank [37]) p10 -16.129032258064516 p90 6.291545819747438 spread 22.420578077811953 -> 22.4 п.п.
+canary-vs-вариант -3.4593233369644816 -> -3.46% (cur 1216790 vs 1260391)
+  parse/foxurl/corpus-all: 963 vs 930 -> +3.55%
+  parse/foxjson/small: 118 vs 130 -> -9.23%
+  find/foxsearch/zzz-absent-zzz: 336224 vs 351428 -> -4.33%
+  parse/foxurl/11: 71 vs 68 -> +4.41%
+НУЛИ: 0
+FP DUAL-FORMULA max |f1-f2|: 1.0658141036401503e-14 (worst classifier/naive-fox/8)
+
+вариант-медианы: -0.9345794392523363 / 0.0 — в РЕЕСТР НЕ идут (урок w278)

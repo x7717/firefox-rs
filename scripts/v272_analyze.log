@@ -1,0 +1,39 @@
+записей в истории: 296
+коммитов-дублей: 10 ['2b6489b', '336e9ff', '415fe95', '628dd1f', '68e6dd4', '6a239dc', '76d4050', '87d7d86', 'f3a9631', 'ff7b23e']
+  белый список 10: СОВПАДАЕТ — НЕ расширяется (новых Store-дублей НЕТ)
+  точек (уникальных коммитов): 286
+
+судимая запись: idx 295 0cb508b [CLASSIC] canary=1216790
+пара (GUARD): 0cb508b [CLASSIC] vs e915c61 [CLASSIC] idx 295 vs 293, distance 2, between=['f92d0dd [MEDIUM]']
+  профиль v11/canary: 0cb508b 5.8350e-05 [OLD] / e915c61 5.6219e-05 [OLD] — SAME-PROFILE (дискриминатор окна 229, порог 6.0e-05)
+
+сравнимых бенчей: n=75
+МЕДИАНА: -9.230769230769232 (f2 -9.230769230769232, |diff| 0.000e+00)
+  rank: [37] соседи -9.58904109589041 / -8.653846153846153
+P10: -18.68672744560658 (f2 -18.68672744560658) deltas[7] соседи -18.823529411764707 / -18.0
+P90: 48.47767280199712 (f2 48.47767280199713) deltas[67] соседи 27.307923437231867 / 56.26892428987311
+SPREAD: 67.16440024760371 -> 67.2 п.п. (f2 67.1644002476037)
+CANARY-vs-ПАРА: -9.991485811041224 -> -9.99% (cur 1216790 vs пара 1351861)
+НУЛИ: 0
+FP DUAL-FORMULA max |f1-f2|: 1.4210854715202004e-14 (worst find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru)
+НУЛИ-СПИСОК: 
+ДИАПАЗОН: -25.0 .. 66.68495297805642
+
+ФЛАГИ (>20%): 12
+  ФЛАГ +66.7% find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru
+  ФЛАГ +64.8% multi/naive-fox/4
+  ФЛАГ +62.7% find/foxsearch/горячие пути
+  ФЛАГ +62.4% find/foxsearch/zzz-absent-zzz
+  ФЛАГ +60.9% find/foxsearch/Mozilla Corporation
+  ФЛАГ +58.8% multi/naive-fox/2
+  ФЛАГ +56.3% multi/naive-fox/8
+  ФЛАГ +48.5% multi/foxsearch-multi/2
+  ФЛАГ +27.3% multi/naive-std/2
+  ФЛАГ +23.2% multi/naive-std/8
+  ФЛАГ +22.7% find/std/zzz-absent-zzz
+  ФЛАГ +22.5% multi/naive-std/4
+ОТНОШЕНИЯ (крейт-медианы): foxjson -15.1% | foxsearch +43.6% | foxurl -6.2%   exact: foxjson=-15.132161221196993, foxsearch=43.635685228185594, foxurl=-6.2091078228082015
+suppressed: ['foxjson', 'foxurl'], elevated: ['foxsearch'], top foxsearch +43.64%, span 58.76784644938259 -> 59
+СЧЁТЧИК corpus-all: 1187 -> 963 -18.871103622577927 — ниже порога +8.0, счётчик НЕ двигается
+ПРОГНОЗ ВЕРДИКТА: ДРЕЙФ exit 3 (suppressed НЕ пуст — относительно УСКОРЕНА кодом не бывает)
+РЕЕСТР-КАНДИДАТ: median НЕ материализуется, реестр 83, серия 0
