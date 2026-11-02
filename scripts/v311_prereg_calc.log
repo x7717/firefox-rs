@@ -1,0 +1,19 @@
+########## МАШИННАЯ ПАРА (урок 305, канон-vs-канон СМЕЖНАЯ) ##########
+=== машина 7548a23: пара 7548a23 (idx 329): [CLASSIC] canary 1359544 v11 77 профиль 5.6637e-05 [OLD] k3 4 zzz 210265 small 148 corpus-all 1191
+n дельт: 75
+MEDIAN -0.8132611093118608 rank[37]
+  соседи -0.9009009009009009 / -0.7853403141361256 — НЕ TIE
+P10 -4.948540299435131 (rank[7])
+P90 0.3401360544217687 (rank[67])
+SPREAD 5.2886763538569 -> 5.3 п.п. УЗКИЙ <=20
+CANARY-vs-ПАРА -0.18101657614611957 -> -0.18% (1357083 vs 1359544)
+НУЛИ 15: ['parse/foxurl/0', 'parse/foxurl/1', 'parse/foxurl/3', 'parse/foxurl/4', 'parse/foxurl/5', 'parse/foxurl/6', 'parse/foxurl/7', 'parse/foxurl/8', 'parse/foxurl/10', 'parse/foxurl/11', 'parse/foxurl/12', 'parse/foxurl/13', 'serialize/foxurl/2', 'serialize/foxurl/3', 'canonical/foxurl/corpus-all']
+ФЛАГИ 0 (>20%): 
+отрицательных дельт: 50; ДИАПАЗОН -11.94..12.87
+fp dual max 1.071365218763276e-14 (worst canonical/foxurl/dirty-all) — CLEAN
+ОТНОШЕНИЯ: foxjson +0.2% | foxsearch -0.7% | foxurl +0.9%
+span 1.5875945626378063 -> 2 п.п.; suppressed []; top foxurl +0.91% elevated=False
+ПРОГНОЗ [машина 7548a23]: ПАРИТЕТ exit 0 БЕЗ заметки
+
+РЕЕСТР: серия = 0 (218-й НЕ материализовался окном 310) — следить за 219-м
+СЧЁТЧИК corpus-all: судимая канон [OLD] 1182 vs пара 1191 — -0.76% — инкремент эры урока 229 ТОЛЬКО при +8.0 и выше => счётчик стоит на 14

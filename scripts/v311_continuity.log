@@ -1,0 +1,13 @@
+data310.js: 330 записей; data311.js: 331 записей
+CONTINUITY 0..329: DICT-РАВНЫ
+НОВАЯ запись idx 330: 0a19148 | 'docs: iteration 310: 298-й вердикт ПАРИТЕТ exit 0 БЕЗ заметк'
+
+=== СУДИМАЯ meta[-1] idx 330 ===
+canary 1357083 | v11 77 | профиль 77/1357083 = 5.6739e-05 [OLD]
+k3 serialize/foxurl/3 = 4 | zzz 208097 | small 144 | corpus-all 1182
+umbrella-класс: CLASSIC
+
+=== КАНДИДАТЫ-ПАРЫ (последние 3 одноклассных предшественника) ===
+idx 329 7548a23 [CLASSIC] canary 1359544 профиль 5.6637e-05 [OLD] k3 4 zzz 210265 small 148 corpus-all 1191 | distance 1
+idx 328 be56765 [CLASSIC] canary 1356917 профиль 5.6746e-05 [OLD] k3 4 zzz 211922 small 144 corpus-all 1183 | distance 2
+idx 327 213ae0b [CLASSIC] canary 1366014 профиль 5.6368e-05 [OLD] k3 4 zzz 226175 small 144 corpus-all 1179 | distance 3
