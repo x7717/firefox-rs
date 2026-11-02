@@ -3,7 +3,7 @@
 
 Роли: (1) парс dataNNN.js, (2) класс + пара последней записи, (3) пять значений
 полной точности двумя формулами (fp dual-formula), (4) флаги/нули/реестр,
-(5) ночные дубли schedule (белый список 10), (6) GUARD-сверка кандидата.
+(5) ночные дубли schedule (белый список 11), (6) GUARD-сверка кандидата.
 Запуск: python3 scripts/analyze.py [data214.js]
 """
 import json
@@ -34,8 +34,18 @@ FAST_T, CLASSIC_T = 900_000, 1_200_000
 # после 87d7d86 w228 (копия-1 FAST, копия-2 CLASSIC того же коммита);
 # расширен 9 -> 10 с пре-регистрацией (урок 204, запись окна 281); патч
 # синхронизации скрипта — окно 306 (прецедент патча analyze.py окна 230).
+# 65e4922 — 11-й дубль (окно 307): schedule Benchmark 41440487960 (старт
+# bc87bb7 11:54:45Z) завершился ПОСЛЕ пушей 0d13b4b/65e4922 и записал
+# Store с атрибуцией main-типу на момент Store = 65e4922 (idx 322, FAST
+# 775759 — w228/w251-прецедент), затем push-Benchmark 65e4922 дал ВТОРУЮ
+# запись (idx 324, CLASSIC 1351596) — ТРЕТИЙ класс-конфликт FAST/CLASSIC
+# после 87d7d86 w228 и 628dd1f w281; копии 75/75 bench различны (canary
+# +74.23%, top classifier/naive-std/8 +151.74% — РАЗНЫЕ хосты пула, НЕ
+# один раннер — отличие от f3a9631); расширен 10 -> 11 с пре-
+# регистрацией диффа (урок 204, v307_profile.log / запись окна 307).
 WHITELIST_DUPES = {"336e9ff", "415fe95", "2b6489b", "628dd1f", "6a239dc",
-                   "76d4050", "68e6dd4", "ff7b23e", "87d7d86", "f3a9631"}
+                   "76d4050", "68e6dd4", "ff7b23e", "87d7d86", "f3a9631",
+                   "65e4922"}
 PAIR_RULES = [("/foxjson/", "/serde_json/"), ("/foxurl/", "/url_crate/"),
               ("/foxsearch/", "/std/")]
 
@@ -70,7 +80,7 @@ def main(path):
     cc = Counter(m["cid"] for m in meta)
     dupes = {c: n for c, n in cc.items() if n > 1}
     print(f"коммитов-дублей: {len(dupes)} {sorted(dupes)}")
-    print(f"  белый список 10: {'СОВПАДАЕТ' if set(dupes) == WHITELIST_DUPES else 'РАСХОЖДЕНИЕ!'}")
+    print(f"  белый список 11: {'СОВПАДАЕТ' if set(dupes) == WHITELIST_DUPES else 'РАСХОЖДЕНИЕ!'}")
     print(f"  точек (уникальных коммитов): {len(cc)}")
 
     last = meta[-1]

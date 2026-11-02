@@ -1,0 +1,35 @@
+########## ПЕРВИЧНАЯ ПАРА (машина, урок 305-прецедент) ##########
+=== машина bc87bb7: пара bc87bb7 (idx 321): [CLASSIC] canary 1257441 v11 68 профиль 5.4078e-05 [OLD] k3 4 zzz 412419 small 130 corpus-all 930
+n дельт: 75
+MEDIAN 7.9234483992130205 rank[37]
+  соседи 7.64525993883792 / 8.557457212713937 — НЕ TIE
+P10 -31.57400998688848 (rank[7])
+P90 18.69158878504673 (rank[67])
+SPREAD 50.26559877193521 -> 50.3 п.п. ШИРОКИЙ >20
+CANARY-vs-ПАРА 7.487826466609566 -> +7.49% (1351596 vs 1257441)
+НУЛИ 1: ['serialize/foxurl/3']
+ФЛАГИ 7 (>20%): foxurl/corpus-all +27.3 / foxurl/6 +25.0 / foxurl/4 +24.6 / foxurl/5 +23.4 / foxurl/3 +23.0 / foxurl/9 +21.4 / foxurl/10 +21.1
+отрицательных дельт: 23; ДИАПАЗОН -51.23..27.31
+fp dual max 1.2434497875801753e-14 (worst parse/foxurl/2) — CLEAN
+ОТНОШЕНИЯ: foxjson +15.3% | foxsearch -37.2% | foxurl +7.3%
+span 52.434769659925394 -> 52 п.п.; suppressed ['foxsearch']; top foxjson +15.26% elevated=True
+ПРОГНОЗ [машина bc87bb7]: ДРЕЙФ СРЕДЫ exit 3 (suppressed НЕ пуст)
+
+########## ССЫЛОЧНАЯ ВЕТКА (план окна 306, канон-vs-канон) ##########
+=== ветка 6f22e55: пара 6f22e55 (idx 316): [CLASSIC] canary 1362935 v11 77 профиль 5.6496e-05 [OLD] k3 4 zzz 208173 small 143 corpus-all 1180
+n дельт: 75
+MEDIAN 0.0 rank[26]
+  соседи -0.015003872621176546 / 0.0 — TIE
+P10 -1.2987012987012987 (rank[7])
+P90 1.440922190201729 (rank[67])
+SPREAD 2.7396234889030278 -> 2.7 п.п. УЗКИЙ <=20
+CANARY-vs-ПАРА -0.8319545686331337 -> -0.83% (1351596 vs 1362935)
+НУЛИ 13: ['parse/foxjson/small', 'parse/foxurl/0', 'parse/foxurl/2', 'parse/foxurl/3', 'parse/foxurl/5', 'parse/foxurl/7', 'parse/foxurl/8', 'parse/foxurl/9', 'parse/foxurl/10', 'parse/foxurl/12', 'parse/foxurl/13', 'serialize/foxurl/0', 'serialize/foxurl/3']
+ФЛАГИ 0 (>20%): 
+отрицательных дельт: 26; ДИАПАЗОН -3.45..12.31
+fp dual max 1.0658141036401503e-14 (worst serialize/foxurl/dirty-all) — CLEAN
+ОТНОШЕНИЯ: foxjson +0.3% | foxsearch -0.1% | foxurl -0.3%
+span 0.6565929011295157 -> 1 п.п.; suppressed []; top foxjson +0.34% elevated=False
+ПРОГНОЗ [ветка 6f22e55]: ПАРИТЕТ exit 0 БЕЗ заметки
+
+РЕЕСТР: серия = 0 (214-й НЕ материализовался окном 306) — следить за 215-м
