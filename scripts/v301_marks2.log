@@ -1,0 +1,24 @@
+АНАТОМИЯ — same-class CLASSIC свидетели (same-profile [OLD], ожидание УЗКОГО 2.2-4.5, урок 31/W276):
+  be8f248 idx 315 [пара] distance 1: spread 2.7 п.п. (p10 -1.4 / p90 1.4), профиль 5.6812e-05 [OLD]
+  b9c5c45 idx 314 [CLASSIC] distance 2: spread 2.9 п.п. (p10 -1.5 / p90 1.4), профиль 5.5854e-05 [OLD]
+  d4214c9 idx 312 [CLASSIC] distance 4: spread 2.7 п.п. (p10 -1.5 / p90 1.2), профиль 5.6537e-05 [OLD]
+  3b83288 idx 310 [CLASSIC] distance 6: spread 2.8 п.п. (p10 -1.9 / p90 0.9), профиль 5.6760e-05 [OLD]
+  729d87c idx 308 [CLASSIC] distance 8: spread 2.3 п.п. (p10 -1.4 / p90 0.9), профиль 5.5299e-05 [OLD]
+  9aeda95 idx 307 [CLASSIC] distance 9: spread 2.8 п.п. (p10 -1.4 / p90 1.4), профиль 5.6745e-05 [OLD]
+  2069adf idx 306 [CLASSIC] distance 10: spread 4.1 п.п. (p10 -3.1 / p90 1.0), профиль 5.5950e-05 [OLD]
+  581d0fb idx 305 [CLASSIC] distance 11: spread 3.1 п.п. (p10 -1.7 / p90 1.4), профиль 5.6622e-05 [OLD]
+АНАТОМИЯ — КОНТРАСТЫ чужих классов (ожидание ШИРОКОГО):
+  8869158 idx 313 [MEDIUM] distance 3: spread 90.8 п.п. (p10 -29.9 / p90 60.9)
+  c9db45c idx 311 [FAST] distance 5: spread 58.3 п.п. (p10 63.2 / p90 121.5)
+  6370dbb idx 304 [FAST] distance 12: spread 52.5 п.п. (p10 70.5 / p90 123.0)
+
+ПЯТЬ ЗНАЧЕНИЙ (n=75): MEDIAN 0.0 rank[27] соседи -0.06234055204956553 / 0.0
+P10 -1.3793103448275863 deltas[7] | P90 1.3583086866031329 deltas[67] | SPREAD 2.737619031430719 -> 2.7 п.п. УЗКИЙ <20
+CANARY-vs-ПАРА 0.5589662960145615 -> +0.56% (cur 1362935 vs пара 1355359)
+НУЛИ 13 (parse/url_crate/0, parse/foxurl/3, parse/url_crate/4, parse/foxurl/5, parse/foxurl/6, parse/url_crate/6, parse/foxurl/9, parse/foxurl/11, parse/foxurl/13, serialize/foxurl/0, serialize/foxurl/2, serialize/foxurl/3, serialize/foxurl/6)
+FP max |f1-f2| 1.1102230246251565e-14 worst parse/url_crate/9
+ФЛАГИ 0
+
+КОНТРОЛ serialize/foxurl/3: {'a4241de': 3, '86b4cf4': 19, '6370dbb': 2, '3b83288': 4, 'c9db45c': 2, 'd4214c9': 4, '8869158': 2, 'b9c5c45': 4, 'be8f248': 4, '6f22e55': 4} (квантование 2/3/19/4; 4 = CLASSIC-норма; контрол закрыт окном 292)
+СЧЁТЧИКИ: точек 307 (записей 317; +1 НОВАЯ точка за окно — 6f22e55 #317); счётчик corpus-all 1179 -> 1180 +0.08% СТОИТ (14) — при OLD-канон судимой +8.0 и выше инкремент эры урока 229
+Серия пяти значений 99-301 ожидается 191/191 (СОТ ДЕВЯНОСТО ПЕРВЫЙ) при 7/7 пре-регистрации

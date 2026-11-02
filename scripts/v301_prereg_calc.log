@@ -1,0 +1,25 @@
+AUTOPAIR: 6f22e55 [CLASSIC] vs be8f248 [CLASSIC] idx 316 vs 315, distance 1, between=NOTHING between
+
+ПЯТЬ ЗНАЧЕНИЙ (n=75):
+  MEDIAN 0.0 (f2 0.0, |diff| 0.000e+00) rank[27] соседи -0.06234055204956553 / 0.0
+  P10 -1.3793103448275863 (f2 -1.379310344827589) deltas[7] соседи deltas[6]=-1.3799892607839628 / deltas[8]=-1.3736263736263736
+  P90 1.3583086866031329 (f2 1.358308686603138) deltas[67] соседи deltas[66]=1.2002587270666203 / deltas[68]=1.36986301369863
+  SPREAD 2.737619031430719 -> 2.7 п.п. (f2 2.737619031430727)
+  CANARY-vs-ПАРА 0.5589662960145615 -> +0.56% (f2 0.5589662960145514) (cur 1362935 vs пара 1355359)
+  НУЛИ 13: parse/url_crate/0 310->310, parse/foxurl/3 75->75, parse/url_crate/4 348->348, parse/foxurl/5 79->79, parse/foxurl/6 49->49, parse/url_crate/6 241->241, parse/foxurl/9 85->85, parse/foxurl/11 77->77, parse/foxurl/13 72->72, serialize/foxurl/0 40->40, serialize/foxurl/2 29->29, serialize/foxurl/3 4->4, serialize/foxurl/6 130->130
+  ДИАПАЗОН -9.8 .. 4.761904761904762
+  FP DUAL max |f1-f2| 1.1102230246251565e-14 worst parse/url_crate/9
+  ФЛАГИ 0
+  МАШИНА-СТРОКА: median +0.00%, p10 -1.38%, p90 +1.36% (разброс 2.7 п.п.), canary +0.56%
+  ОТНОШЕНИЯ exact: foxjson=-0.6511884423202385 foxsearch=0.13898694295988445 foxurl=0.2645502645502784
+  ОТНОШЕНИЯ печатные: foxjson -0.7% | foxsearch +0.1% | foxurl +0.3%
+  span 0.915738706870517 -> 1, suppressed [], top foxurl +0.26
+
+РЕЕСТР: 209-й КАНДИДАТ МАТЕРИАЛИЗОВАЛСЯ — median 0.0 РОВНО rank[27] (f2 0.0, |diff| 0.000e+00)
+  соседи rank[26]=-0.06234055204956553 / rank[28]=0.0
+
+КОНТРОЛ serialize/foxurl/3: {'a4241de': 3, '86b4cf4': 19, '6370dbb': 2, '3b83288': 4, 'c9db45c': 2, 'd4214c9': 4, '8869158': 2, 'b9c5c45': 4, 'be8f248': 4, '6f22e55': 4}
+
+СЧЁТЧИКИ: точек 307 (записей 317); дубли ['2b6489b', '336e9ff', '415fe95', '628dd1f', '68e6dd4', '6a239dc', '76d4050', '87d7d86', 'f3a9631', 'ff7b23e'] (10)
+  corpus-all 1179 -> 1180 +0.08%
+  хвост 6 записей: [('c9db45c', 'FAST'), ('d4214c9', 'CLASSIC'), ('8869158', 'MEDIUM'), ('b9c5c45', 'CLASSIC'), ('be8f248', 'CLASSIC'), ('6f22e55', 'CLASSIC')]
