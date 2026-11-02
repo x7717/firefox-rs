@@ -3,7 +3,7 @@
 
 Роли: (1) парс dataNNN.js, (2) класс + пара последней записи, (3) пять значений
 полной точности двумя формулами (fp dual-formula), (4) флаги/нули/реестр,
-(5) ночные дубли schedule (белый список 8), (6) GUARD-сверка кандидата.
+(5) ночные дубли schedule (белый список 10), (6) GUARD-сверка кандидата.
 Запуск: python3 scripts/analyze.py [data214.js]
 """
 import json
@@ -29,7 +29,12 @@ FAST_T, CLASSIC_T = 900_000, 1_200_000
 # 67/75 bench РАЗЛИЧНЫ, все сдвиги микро (canary +0.28%, corpus-all
 # 1184->1181, v11 76->78) — ОДИН раннер, измеренный разброс ~±1%;
 # белый список расширен 8 -> 9 с пре-регистрацией диффа (урок 204).
-WHITELIST_DUPES = {"336e9ff", "415fe95", "2b6489b", "6a239dc",
+# 628dd1f — 10-й дубль (окно 281): bench.yml schedule 41299661512 добавил
+# Store-дубль 628dd1f (idx 292) — ВТОРОЙ класс-конфликт в реестре дублей
+# после 87d7d86 w228 (копия-1 FAST, копия-2 CLASSIC того же коммита);
+# расширен 9 -> 10 с пре-регистрацией (урок 204, запись окна 281); патч
+# синхронизации скрипта — окно 306 (прецедент патча analyze.py окна 230).
+WHITELIST_DUPES = {"336e9ff", "415fe95", "2b6489b", "628dd1f", "6a239dc",
                    "76d4050", "68e6dd4", "ff7b23e", "87d7d86", "f3a9631"}
 PAIR_RULES = [("/foxjson/", "/serde_json/"), ("/foxurl/", "/url_crate/"),
               ("/foxsearch/", "/std/")]
@@ -65,7 +70,7 @@ def main(path):
     cc = Counter(m["cid"] for m in meta)
     dupes = {c: n for c, n in cc.items() if n > 1}
     print(f"коммитов-дублей: {len(dupes)} {sorted(dupes)}")
-    print(f"  белый список 8: {'СОВПАДАЕТ' if set(dupes) == WHITELIST_DUPES else 'РАСХОЖДЕНИЕ!'}")
+    print(f"  белый список 10: {'СОВПАДАЕТ' if set(dupes) == WHITELIST_DUPES else 'РАСХОЖДЕНИЕ!'}")
     print(f"  точек (уникальных коммитов): {len(cc)}")
 
     last = meta[-1]
