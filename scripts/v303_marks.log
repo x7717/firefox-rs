@@ -1,0 +1,20 @@
+MEDIUM-свидетелей: 57
+== ПЯТЬ УЗКИХ (судимая vs свидетель) ==
+  415fe95 idx 31 canary 1068098 k3 3 corpus 995: spread 2.4 (med +0.00 p10 -1.43 p90 +0.92 n=75)
+  6bdc6ce idx 128 canary 1061107 k3 3 corpus 995: spread 2.5 (med +0.00 p10 -1.56 p90 +0.90 n=75)
+  68e6dd4 idx 200 canary 1071007 k3 3 corpus 994: spread 2.5 (med -0.19 p10 -2.14 p90 +0.32 n=75)
+  0b649b6 idx 112 canary 1067494 k3 3 corpus 992: spread 2.6 (med +0.00 p10 -1.53 p90 +1.06 n=75)
+  b4e4b57 idx 4 canary 1067490 k3 3 corpus 999: spread 2.8 (med +0.00 p10 -1.46 p90 +1.30 n=75)
+== ПЯТЬ ШИРОКИХ ==
+  43f3373 idx 143 canary 1029443 k3 3 corpus 811: spread 66.4 (med -5.85)
+  e24e80f idx 263 canary 992228 k3 2 corpus 791: spread 76.5 (med -3.14)
+  6241266 idx 245 canary 936463 k3 2 corpus 741: spread 82.7 (med +3.56)
+  9da4f3e idx 264 canary 938638 k3 2 corpus 743: spread 83.3 (med +4.67)
+  8869158 idx 313 canary 938523 k3 2 corpus 745: spread 87.5 (med +3.45)
+== КЛЮЧЕВЫЕ ==
+  8869158 idx 313 canary 938523 k3 2 corpus 745: spread 87.5 (med +3.45 p10 -44.67 p90 +42.86)
+  a4241de idx 301 canary 1071504 k3 3 corpus 983: spread 3.1 (med +0.00 p10 -1.44 p90 +1.61)
+  da96246 idx 309 canary 1185503 k3 3 corpus 942: spread 54.4 (med -17.48 p10 -43.62 p90 +10.81)
+  9da4f3e idx 264 canary 938638 k3 2 corpus 743: spread 83.3 (med +4.67 p10 -40.46 p90 +42.86)
+  6241266 idx 245 canary 936463 k3 2 corpus 741: spread 82.7 (med +3.56 p10 -39.86 p90 +42.86)
+КОНТРОЛ: судимая k3 = 3 (3 = a4241de MEDIUM-ядро; 2 = FAST/подформа/двойня; 4 = OLD-канон CLASSIC; 19 = NEW-скошенная)

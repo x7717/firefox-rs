@@ -1,0 +1,19 @@
+total records: 319
+idx 318 cid e63ee47: [MEDIUM] canary 1069443 v11 78 профиль 7.2935e-05 [NEW]
+idx 317 cid 095148c: [FAST] canary 895505 v11 49 профиль 5.4718e-05 [OLD]
+idx 316 cid 6f22e55: [CLASSIC] canary 1362935 v11 77 профиль 5.6496e-05 [OLD]
+--- профиль судимой e63ee47 #319 ---
+класс [MEDIUM] (пороги FAST<900k / MEDIUM<1200k / CLASSIC>=1200k)
+canary 1069443 Формы-A кластер 711824-816814: OUTSIDE | подформа memory-slow 895505-938638: OUTSIDE
+zzz 178127 OLD-конверт 203811-226663: OUTSIDE | FAST-конверт 108773-159730: OUTSIDE | twin-норма memory-slow 350166-355810: OUTSIDE (>=380k => memory-slow усиливается)
+small 114 CLASSIC-норма 143-153: OUTSIDE | FAST-норма 77-89: OUTSIDE
+corpus-all 994 OLD-зона 1163-1228: OUTSIDE | NEW-скошенная 1219-1424 | Формы-A 568-667 | low-canary подформа 597-825 | MEDIUM ядро 976-1014
+профиль 78/1069443 = 7.2935e-05 [NEW] (дискриминатор окна 229, порог 6.0e-05)
+визит Формы-A кластера: 63-й (НЕ входит)
+--- пара (БЛИЖАЙШАЯ ЗАПИСЬ КЛАССА, уроки 198/204) ---
+пара: e63ee47 [MEDIUM] vs 8869158 [MEDIUM] idx 318 vs 313, distance 5, between=['b9c5c45', 'be8f248', '6f22e55', '095148c']
+  профиль пары: 8869158 5.5406e-05 [OLD] — CROSS-PROFILE
+  одноклассных записей [MEDIUM]: 58
+КОНТРОЛ serialize/foxurl/3: 2 -> 3
+canary-vs-пары: (1069443 vs 938523) +13.95%
+маркер подформы: zzz 178127 — канон ~350k 
