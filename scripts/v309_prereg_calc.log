@@ -1,0 +1,19 @@
+########## МАШИННАЯ ПАРА (урок 305, канон-vs-канон distance 2) ##########
+=== машина 07c98d1: пара 07c98d1 (idx 325): [CLASSIC] canary 1358936 v11 77 профиль 5.6662e-05 [OLD] k3 4 zzz 206866 small 143 corpus-all 1182
+n дельт: 75
+MEDIAN 0.684931506849315 rank[37]
+  соседи 0.520848663954741 / 0.6993006993006993 — НЕ TIE
+P10 -1.5267175572519083 (rank[7])
+P90 5.163884929633059 (rank[67])
+SPREAD 6.690602486884967 -> 6.7 п.п. УЗКИЙ <=20
+CANARY-vs-ПАРА 0.520848663954741 -> +0.52% (1366014 vs 1358936)
+НУЛИ 13: ['parse/foxurl/0', 'parse/foxurl/2', 'parse/foxurl/3', 'parse/url_crate/3', 'parse/foxurl/4', 'parse/foxurl/6', 'parse/foxurl/9', 'parse/foxurl/10', 'parse/foxurl/11', 'parse/foxurl/12', 'serialize/foxurl/3', 'serialize/foxurl/4', 'serialize/foxurl/5']
+ФЛАГИ 0 (>20%): 
+отрицательных дельт: 18; ДИАПАЗОН -9.40..10.84
+fp dual max 1.1102230246251565e-14 (worst multi/foxsearch-multi/8) — CLEAN
+ОТНОШЕНИЯ: foxjson -1.2% | foxsearch +6.6% | foxurl -0.3%
+span 7.8669256870218085 -> 8 п.п.; suppressed []; top foxsearch +6.63% elevated=False
+ПРОГНОЗ [машина 07c98d1]: ПАРИТЕТ exit 0 БЕЗ заметки
+
+РЕЕСТР: серия = 1 (216-й МАТЕРИАЛИЗОВАЛСЯ окном 308) — следить за 217-м
+СЧЁТЧИК corpus-all: судимая канон [OLD] 1179 vs пара 1182 — -0.25% — инкремент эры урока 229 ТОЛЬКО при +8.0 и выше => счётчик стоит на 14
