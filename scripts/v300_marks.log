@@ -1,0 +1,23 @@
+АНАТОМИЯ — same-class CLASSIC свидетели (same-profile [OLD], ожидание УЗКОГО 2.2-4.5, урок 31/W276):
+  b9c5c45 idx 314 [пара] distance 1: spread 2.7 п.п. (p10 -1.5 / p90 1.1), профиль 5.5854e-05 [OLD]
+  d4214c9 idx 312 [CLASSIC] distance 3: spread 3.1 п.п. (p10 -1.9 / p90 1.2), профиль 5.6537e-05 [OLD]
+  3b83288 idx 310 [CLASSIC] distance 5: spread 3.2 п.п. (p10 -2.4 / p90 0.8), профиль 5.6760e-05 [OLD]
+  729d87c idx 308 [CLASSIC] distance 7: spread 3.3 п.п. (p10 -1.9 / p90 1.4), профиль 5.5299e-05 [OLD]
+  9aeda95 idx 307 [CLASSIC] distance 8: spread 2.4 п.п. (p10 -1.2 / p90 1.2), профиль 5.6745e-05 [OLD]
+  2069adf idx 306 [CLASSIC] distance 9: spread 4.1 п.п. (p10 -3.0 / p90 1.1), профиль 5.5950e-05 [OLD]
+  581d0fb idx 305 [CLASSIC] distance 10: spread 2.7 п.п. (p10 -1.5 / p90 1.2), профиль 5.6622e-05 [OLD]
+АНАТОМИЯ — КОНТРАСТЫ чужих классов (ожидание ШИРОКОГО):
+  8869158 idx 313 [MEDIUM] distance 2: spread 89.9 п.п. (p10 -29.7 / p90 60.2)
+  c9db45c idx 311 [FAST] distance 4: spread 59.1 п.п. (p10 61.0 / p90 120.1)
+  6370dbb idx 304 [FAST] distance 11: spread 54.7 п.п. (p10 68.8 / p90 123.5)
+
+ПЯТЬ ЗНАЧЕНИЙ (n=75): MEDIAN 0.0 rank[34] соседи -0.00982495051045968 / 0.0
+P10 -1.5120357722231093 deltas[7] | P90 1.1494252873563218 deltas[67] | SPREAD 2.6614610595794312 -> 2.7 п.п. УЗКИЙ <20
+CANARY-vs-ПАРА -0.39098126744074096 -> -0.39% (cur 1355359 vs пара 1360679)
+НУЛИ 12 (parse/foxurl/0, parse/foxurl/3, parse/foxurl/4, parse/foxurl/6, parse/foxurl/7, parse/foxurl/8, parse/foxurl/9, parse/foxurl/10, parse/foxurl/12, serialize/foxurl/3, serialize/foxurl/4, canonical/foxurl/corpus-all)
+FP max |f1-f2| 9.992007221626409e-15 worst classifier/naive-std/8
+ФЛАГИ 0
+
+КОНТРОЛ serialize/foxurl/3: {'a4241de': 3, '86b4cf4': 19, '6370dbb': 2, '3b83288': 4, 'c9db45c': 2, 'd4214c9': 4, '8869158': 2, 'b9c5c45': 4, 'be8f248': 4} (квантование 2/3/19/4; 4 = CLASSIC-норма; контрол закрыт окном 292)
+СЧЁТЧИКИ: точек 306 (записей 316; +1 НОВАЯ точка за окно — be8f248 #316); счётчик corpus-all 1183 -> 1179 -0.34% СТОИТ (14) — при OLD-канон судимой +8.0 и выше инкремент эры урока 229
+Серия пяти значений 99-300 ожидается 190/190 (СОТ ДЕВЯНОСТЫЙ) при 7/7 пре-регистрации

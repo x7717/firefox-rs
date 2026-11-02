@@ -1,0 +1,24 @@
+AUTOPAIR: be8f248 [CLASSIC] vs b9c5c45 [CLASSIC] idx 315 vs 314, distance 1, between=NOTHING between
+
+ПЯТЬ ЗНАЧЕНИЙ (n=75):
+  MEDIAN 0.0 (f2 0.0, |diff| 0.000e+00) rank[34] соседи -0.00982495051045968 / 0.0
+  P10 -1.5120357722231093 (f2 -1.5120357722231081) deltas[7] соседи deltas[6]=-1.5151515151515151 / deltas[8]=-1.36986301369863
+  P90 1.1494252873563218 (f2 1.1494252873563315) deltas[67] соседи deltas[66]=1.0220843219565614 / deltas[68]=1.2372586282509601
+  SPREAD 2.6614610595794312 -> 2.7 п.п. (f2 2.6614610595794397)
+  CANARY-vs-ПАРА -0.39098126744074096 -> -0.39% (f2 -0.3909812674407376) (cur 1355359 vs пара 1360679)
+  НУЛИ 12: parse/foxurl/0 65->65, parse/foxurl/3 75->75, parse/foxurl/4 73->73, parse/foxurl/6 49->49, parse/foxurl/7 101->101, parse/foxurl/8 89->89, parse/foxurl/9 85->85, parse/foxurl/10 68->68, parse/foxurl/12 65->65, serialize/foxurl/3 4->4, serialize/foxurl/4 82->82, canonical/foxurl/corpus-all 1418->1418
+  ДИАПАЗОН -4.5 .. 3.571428571428571
+  FP DUAL max |f1-f2| 9.992007221626409e-15 worst classifier/naive-std/8
+  ФЛАГИ 0
+  МАШИНА-СТРОКА: median +0.00%, p10 -1.51%, p90 +1.15% (разброс 2.7 п.п.), canary -0.39%
+  ОТНОШЕНИЯ exact: foxjson=1.4144946870205288 foxsearch=0.43199634902003625 foxurl=-0.28901734104046506
+  ОТНОШЕНИЯ печатные: foxjson +1.4% | foxsearch +0.4% | foxurl -0.3%
+  span 1.7035120280609939 -> 2, suppressed [], top foxjson +1.41
+
+РЕЕСТР: 208-й КАНДИДАТ МАТЕРИАЛИЗОВАЛСЯ — median 0.0 РОВНО rank[34] (f2 0.0, |diff| 0.000e+00)
+  соседи rank[33]=-0.00982495051045968 / rank[35]=0.0
+
+КОНТРОЛ serialize/foxurl/3: {'a4241de': 3, '86b4cf4': 19, '6370dbb': 2, '3b83288': 4, 'c9db45c': 2, 'd4214c9': 4, '8869158': 2, 'b9c5c45': 4, 'be8f248': 4}
+
+СЧЁТЧИКИ: точек 306 (записей 316); дубли ['2b6489b', '336e9ff', '415fe95', '628dd1f', '68e6dd4', '6a239dc', '76d4050', '87d7d86', 'f3a9631', 'ff7b23e'] (10)
+  corpus-all 1183 -> 1179 -0.34%
