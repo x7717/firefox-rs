@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""v305_prereg_calc.py — расчёт ДО машины (окно 305): точная реплика математики
+tools/bench_history.py check_regression (порог 20.0) + нули + fp dual.
+Судимая 933038a #321 (idx 320, CLASSIC canary 1275907 — docs-пуш итерации
+304; CI 41433945729 success 11:05:18Z), пара 6f22e55 #317 (idx 316,
+CLASSIC — ветка 'CLASSIC->6f22e55 #317 (idx 316)' плана окна 304),
+distance 4, between ['095148c' FAST, 'e63ee47' MEDIUM, '56cf4dd' FAST] —
+все вставки НЕ одноклассны."""
+import json
+import re
+import statistics
+from pathlib import Path
+
+raw = Path("scripts/data305.js").read_text()
+d = json.loads(re.search(r"window\.BENCHMARK_DATA\s*=\s*(\{.*\})\s*;?\s*$", raw, re.S).group(1))
+runs = d["entries"]["Rust Benchmark"]
+n = len(runs)
+assert n == 321 and runs[-1]["commit"]["id"].startswith("933038a")
+
+def vals_of(r):
+    return {b["name"]: b["value"] for b in r["benches"]}
+
+def cls_of(v):
+    c = v["parse/foxjson/session-5000"]
+    return "FAST" if c < 900_000 else ("MEDIUM" if c < 1_200_000 else "CLASSIC")
+
+last_vals = vals_of(runs[-1])
+pair_pos = 316
+pair_vals = vals_of(runs[pair_pos])
+assert runs[pair_pos]["commit"]["id"].startswith("6f22e55")
+
+# --- профиль пары 6f22e55 ---
+pc = pair_vals["parse/foxjson/session-5000"]
+pv11 = pair_vals["parse/foxurl/11"]
+pk3 = pair_vals.get("serialize/foxurl/3")
+pzzz = pair_vals.get("find/foxsearch/zzz-absent-zzz")
+psmall = pair_vals.get("parse/foxjson/small")
+pcorpus = pair_vals.get("parse/foxurl/corpus-all")
+pprof = pv11 / pc
+print(f"пара 6f22e55 #317 (idx {pair_pos}): [{cls_of(pair_vals)}] canary {pc} "
+      f"v11 {pv11} профиль {pprof:.4e} [{'OLD' if pprof < 6.0e-05 else 'NEW'}] "
+      f"k3 {pk3} zzz {pzzz} small {psmall} corpus-all {pcorpus}")
+print(f"  канон-кластер 1345000-1375000: "
+      f"{'INSIDE' if 1345000 <= pc <= 1375000 else 'OUTSIDE'}; "
+      f"OLD-коридор 5.25-5.91e-05: "
+      f"{'INSIDE' if 5.25e-05 <= pprof <= 5.91e-05 else 'OUTSIDE'}")
+
+# дельты — точный порядок машины
+deltas, regressions = [], []
+for name, v in last_vals.items():
+    pv = pair_vals.get(name)
+    if not pv or not v:
+        continue
+    delta = (v - pv) / pv * 100.0
+    deltas.append(delta)
+    if delta > 20.0:
+        regressions.append((delta, name, pv, v))
+ds = sorted(deltas)
+nd = len(ds)
+med = statistics.median(ds)
+p10 = ds[int(nd * 0.10)]
+p90 = ds[int(nd * 0.90)]
+spread = p90 - p10
+ca = pair_vals["parse/foxjson/session-5000"]
+cb = last_vals["parse/foxjson/session-5000"]
+cdelta = (cb - ca) / ca * 100.0
+
+print(f"n дельт: {nd}")
+print(f"MEDIAN {med!r} rank[{ds.index(med)}]" if med in ds else f"MEDIAN {med!r} (интерполяция)")
+sidx = ds.index(med) if med in ds else None
+if sidx is not None:
+    lo = ds[sidx - 1] if sidx > 0 else None
+    hi = ds[sidx + 1] if sidx < nd - 1 else None
+    tie = (lo == med) or (hi == med)
+    print(f"  соседи {lo!r} / {hi!r} — {'TIE' if tie else 'НЕ TIE'}")
+print(f"P10 {p10!r} (rank[{ds.index(p10)}], соседи {ds[ds.index(p10)-1]!r} / {ds[ds.index(p10)+1]!r})")
+print(f"P90 {p90!r} (rank[{ds.index(p90)}], соседи {ds[ds.index(p90)-1]!r} / {ds[ds.index(p90)+1]!r})")
+print(f"SPREAD {spread!r} -> {spread:.1f} п.п. {'ШИРОКИЙ >20' if spread > 20 else 'УЗКИЙ <=20'} "
+      f"(CLASSIC-коридор same-profile 2.2-4.5 п.п., урок 31/W276)")
+print(f"CANARY-vs-ПАРА {cdelta!r} -> {cdelta:+.2f}% ({cb} vs {ca})")
+nulls = [(name) for name, v in last_vals.items()
+         if pair_vals.get(name) and v == pair_vals[name]]
+print(f"НУЛИ {len(nulls)}: {nulls}")
+regressions.sort(reverse=True)
+print(f"ФЛАГИ {len(regressions)} (>20%): "
+      + " / ".join(f"{n2.split('/', 1)[1] if '/' in n2 else n2} +{dv:.1f}" for dv, n2, _, _ in regressions[:15]))
+neg = [x for x in ds if x < 0]
+print(f"отрицательных дельт: {len(neg)}; min {ds[0]:.2f} max {ds[-1]:.2f} ДИАПАЗОН {ds[0]:.2f}..{ds[-1]:.2f}")
+
+fp = 0.0
+worst = ""
+for name, v in last_vals.items():
+    pv = pair_vals.get(name)
+    if not pv or not v:
+        continue
+    f1 = (v - pv) / pv * 100.0
+    f2 = (v / pv - 1.0) * 100.0
+    if abs(f1 - f2) > fp:
+        fp, worst = abs(f1 - f2), name
+print(f"fp dual max {fp!r} (worst {worst}) — {'CLEAN' if fp < 1e-9 else 'CHECK'}")
+
+PAIR_RULES = [("/foxjson/", "/serde_json/"), ("/foxurl/", "/url_crate/"), ("/foxsearch/", "/std/")]
+def std_partner(name):
+    for a, b in PAIR_RULES:
+        if a in name:
+            return name.replace(a, b, 1)
+    return None
+ratios = []
+for name, v in last_vals.items():
+    partner = std_partner(name)
+    pv_p = pair_vals.get(partner) if partner else None
+    pv = pair_vals.get(name)
+    if not (partner and pv_p and pv and v and name in pair_vals):
+        continue
+    ratios.append((name.split("/")[1], (v / pv) / (last_vals[partner] / pv_p)))
+rmed = {}
+for crate in sorted({c for c, _ in ratios}):
+    dsl = [(r - 1.0) * 100.0 for c, r in ratios if c == crate]
+    if dsl:
+        rmed[crate] = statistics.median(dsl)
+print("ОТНОШЕНИЯ: " + " | ".join(f"{c} {v:+.1f}%" for c, v in sorted(rmed.items()))
+      + f" (exact {' / '.join(f'{c} {rmed[c]!r}' for c in sorted(rmed))})")
+span = (max(rmed.values()) - min(rmed.values())) if rmed else 0.0
+suppressed = [c for c, v in rmed.items() if v <= -5.0]
+top_crate = max(rmed, key=rmed.get) if rmed else None
+elevated = top_crate is not None and rmed[top_crate] >= 8.0
+print(f"span {span!r} -> {span:.0f} п.п.; suppressed {suppressed}; top {top_crate} "
+      f"{rmed.get(top_crate, 0):+.2f}% elevated={elevated}")
+
+if not regressions:
+    note = (abs(cdelta) > 3) or spread > 20
+    print(f"ПРОГНОЗ: ПАРИТЕТ exit 0 {'С ЗАМЕТКОЙ' if note else 'БЕЗ заметки'}")
+else:
+    if spread > 20.0:
+        if suppressed:
+            print("ПРОГНОЗ: ДРЕЙФ СРЕДЫ exit 3 (suppressed НЕ пуст)")
+        elif elevated:
+            print(f"ПРОГНОЗ: РЕГРЕСС exit 1 (elevated {top_crate})")
+        else:
+            print("ПРОГНОЗ: ДРЕЙФ СРЕДЫ exit 3 (глобальный сдвиг)")
+    else:
+        print("ПРОГНОЗ: РЕГРЕСС exit 1 (узкое распределение)")

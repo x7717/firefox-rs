@@ -1,0 +1,16 @@
+пара 6f22e55 #317 (idx 316): [CLASSIC] canary 1362935 v11 77 профиль 5.6496e-05 [OLD] k3 4 zzz 208173 small 143 corpus-all 1180
+  канон-кластер 1345000-1375000: INSIDE; OLD-коридор 5.25-5.91e-05: INSIDE
+n дельт: 75
+MEDIAN -3.614457831325301 rank[37]
+  соседи -4.056643383335242 / -3.3333333333333335 — НЕ TIE
+P10 -11.740890688259109 (rank[7], соседи -12.162162162162163 / -11.667532882900892)
+P90 49.57876802381981 (rank[67], соседи 39.7519072524127 / 50.22469565650683)
+SPREAD 61.31965871207892 -> 61.3 п.п. ШИРОКИЙ >20 (CLASSIC-коридор same-profile 2.2-4.5 п.п., урок 31/W276)
+CANARY-vs-ПАРА -6.385337525267162 -> -6.39% (1275907 vs 1362935)
+НУЛИ 2: ['parse/foxurl/0', 'serialize/foxurl/3']
+ФЛАГИ 10 (>20%): foxsearch/Mozilla Corporation +76.8 / foxsearch/горячие пути +76.6 / naive-fox/2 +76.5 / foxsearch/zzz-absent-zzz +75.5 / foxsearch-multi/2 +64.3 / naive-fox/4 +61.6 / foxsearch/https://example.com/search?q=firefox+rust&lang=ru +50.2 / naive-fox/8 +49.6 / naive-std/4 +39.8 / naive-std/2 +34.9
+отрицательных дельт: 44; min -17.24 max 76.79 ДИАПАЗОН -17.24..76.79
+fp dual max 1.4210854715202004e-14 (worst multi/foxsearch-multi/2) — CLEAN
+ОТНОШЕНИЯ: foxjson -13.3% | foxsearch +52.4% | foxurl +6.7% (exact foxjson -13.302994307446514 / foxsearch 52.44117786142589 / foxurl 6.666666666666665)
+span 65.74417216887241 -> 66 п.п.; suppressed ['foxjson']; top foxsearch +52.44% elevated=True
+ПРОГНОЗ: ДРЕЙФ СРЕДЫ exit 3 (suppressed НЕ пуст)
