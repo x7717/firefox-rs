@@ -1,0 +1,16 @@
+=== ВАРИАНТ-СВИДЕТЕЛЬСТВО ОКНА 294 (9aeda95, CLASSIC OLD-канон) ===
+--- ПАРА (машина судит отдельно) ---
+PAIR: vs 2069adf (idx 306, distance 1) median -0.1468887708222646, spread 4.998860841043721 -> 5.0, canary -0.10%, 11 нулей, small +2.10%, zzz -3.02%, corpus-all -0.08%
+--- same-form OLD-канон свидетели (ожидание УЗКИХ) ---
+WITNESS: vs 581d0fb (idx 305, distance 2) median -0.08561643835616438, spread 3.1741002618311587 -> 3.2, canary -0.22%, 17 нулей, small -0.68%, zzz -0.83%, corpus-all +0.85%
+WITNESS: vs 68f8b0a (idx 300, distance 7) median -0.07480313742636989, spread 3.34205820839922 -> 3.3, canary +0.03%, 13 нулей, small +2.10%, zzz -2.08%, corpus-all -0.67%
+WITNESS: vs b94692e (idx 297, distance 10) median -0.6287686353141915, spread 3.9578372727800684 -> 4.0, canary +0.11%, 6 нулей, small +2.10%, zzz -0.67%, corpus-all -0.17%
+WITNESS: vs d092b80 (idx 283, distance 24) median -0.20026503032328924, spread 2.278400014446911 -> 2.3, canary -0.53%, 17 нулей, small +1.39%, zzz -0.66%, corpus-all -1.91%
+WITNESS: vs d70534f (idx 66, distance 241) median 0.0, spread 2.805398151378295 -> 2.8, canary +0.06%, 13 нулей, small +2.10%, zzz -0.26%, corpus-all -0.08%
+--- контраст чужих классов/форм (ожидание ШИРОКИХ) ---
+CONTRAST: vs 6370dbb (idx 304, distance 3) median 96.78321678321679, spread 52.899188514403946 -> 52.9, canary +78.37%, 0 нулей, small +82.50%, zzz +76.24%, corpus-all +105.75%
+CONTRAST: vs 86b4cf4 (idx 302, distance 5) median -1.9216298685985647, spread 29.58617409227842 -> 29.6, canary -0.06%, 0 нулей, small -0.68%, zzz -10.93%, corpus-all -7.30%
+CONTRAST: vs a4241de (idx 301, distance 6) median 27.27272727272727, spread 35.947204968944106 -> 35.9, canary +26.64%, 0 нулей, small +28.07%, zzz +15.28%, corpus-all +20.14%
+CONTRAST: vs fe76381 (idx 299, distance 8) median 8.064516129032258, spread 52.36624829245848 -> 52.4, canary +7.71%, 1 нулей, small +12.31%, zzz -45.18%, corpus-all +26.99%
+CONTRAST: vs b74d5b2 (idx 298, distance 9) median 10.804020100502512, spread 55.27400513072676 -> 55.3, canary +10.91%, 0 нулей, small +22.69%, zzz -37.99%, corpus-all +20.76%
+CONTRAST: vs 33c89cc (idx 296, distance 11) median 86.17034879836326, spread 59.384095581201265 -> 59.4, canary +73.02%, 0 нулей, small +71.76%, zzz +69.53%, corpus-all +95.53%
