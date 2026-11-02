@@ -1,0 +1,15 @@
+total records: 320
+idx 319 cid 56cf4dd: [FAST] canary 726792 v11 40 профиль 5.5036e-05 [OLD]
+idx 318 cid e63ee47: [MEDIUM] canary 1069443 v11 78 профиль 7.2935e-05 [NEW]
+idx 317 cid 095148c: [FAST] canary 895505 v11 49 профиль 5.4718e-05 [OLD]
+--- профиль судимой 56cf4dd #320 ---
+класс [FAST] (пороги FAST<900k / MEDIUM<1200k / CLASSIC>=1200k)
+canary 726792 Формы-A кластер 711824-816814: INSIDE | подформа memory-slow 895505-938638: OUTSIDE
+k3 serialize/foxurl/3 = 2 (картирование 2/3/19/4: 2=FAST/подформа/двойня, 3=MEDIUM-ядро, 4=OLD-канон CLASSIC, 19=NEW-скошенная)
+zzz 115037 OLD-конверт 203811-226663: OUTSIDE | FAST-конверт 108773-159730: INSIDE | twin-норма memory-slow 350166-355810: OUTSIDE | MEDIUM-ядро zzz ~178k (окно 302/303): OUTSIDE (>=380k => memory-slow усиливается)
+small 83 CLASSIC-норма 143-153: OUTSIDE | FAST-норма 77-89: INSIDE
+corpus-all 591 OLD-зона 1163-1228: OUTSIDE | NEW-скошенная 1219-1424 | Формы-A 568-667 | low-canary подформа 597-825 | MEDIUM ядро 976-1014
+профиль 40/726792 = 5.5036e-05 [OLD] (дискриминатор окна 229, порог 6.0e-05); OLD-коридор 5.25-5.91e-05 (урок 31): INSIDE
+дубли последних 10: {'3b83288': 1, 'c9db45c': 1, 'd4214c9': 1, '8869158': 1, 'b9c5c45': 1, 'be8f248': 1, '6f22e55': 1, '095148c': 1, 'e63ee47': 1, '56cf4dd': 1} — НОЧНЫХ ДУБЛЕЙ НЕТ
+CONTINUITY 0-318: dict-равны data303.js = True
+точек 310 (записей 320)

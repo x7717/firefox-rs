@@ -1,0 +1,19 @@
+Формы-A свидетелей: 63
+== ПЯТЬ УЗКИХ (судимая vs свидетель) ==
+  bc328fa idx 256 canary 719126 k3 2 corpus 569: spread 5.4 (med +1.08 p10 -0.70 p90 +4.70 n=75)
+  c9db45c idx 311 canary 757180 k3 2 corpus 593: spread 5.5 (med -2.54 p10 -5.52 p90 +0.00 n=75)
+  1467f36 idx 240 canary 770632 k3 2 corpus 601: spread 5.6 (med -4.76 p10 -6.67 p90 -1.09 n=75)
+  33c89cc idx 296 canary 784289 k3 2 corpus 604: spread 5.7 (med -4.76 p10 -7.84 p90 -2.15 n=75)
+  a7cbe77 idx 132 canary 791236 k3 2 corpus 621: spread 5.8 (med -5.59 p10 -8.19 p90 -2.35 n=75)
+== ПЯТЬ ШИРОКИХ ==
+  282f442 idx 51 canary 735444 k3 2 corpus 575: spread 11.3 (med +0.00)
+  628dd1f idx 291 canary 799720 k3 2 corpus 582: spread 11.9 (med -2.44)
+  4742c83 idx 19 canary 757115 k3 2 corpus 667: spread 12.8 (med -3.12)
+  e5d154e idx 130 canary 716070 k3 2 corpus 601: spread 13.0 (med +0.52)
+  4eb8807 idx 285 canary 758270 k3 2 corpus 578: spread 16.7 (med -4.48)
+== КЛЮЧЕВЫЕ ==
+  095148c idx 317: НЕ Формы-A (canary 895505), spread судимой vs него 45.9 (med -27.68)
+  c9db45c idx 311 canary 757180 k3 2 corpus 593: spread 5.5 (med -2.54 p10 -5.52 p90 +0.00)
+  6370dbb idx 304 canary 760737 k3 2 corpus 574: spread 7.6 (med -0.10 p10 -3.87 p90 +3.75)
+  8869158 idx 313: НЕ Формы-A (canary 938523), spread судимой vs него 37.2 (med -30.77)
+  e63ee47 idx 318: НЕ Формы-A (canary 1069443), spread судимой vs него 22.4 (med -35.42)
