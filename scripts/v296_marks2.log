@@ -1,0 +1,39 @@
+ПРОФИЛЬ-СТРОКА: canary 1356597 INSIDE кластера 1345000-1375000 (от нижней +38.66% ширины — нижняя половина)
+  профиль v11/canary = 77/1356597 = 5.6759671442587595e-05 [OLD]
+  zzz 207947 | small 144 | corpus-all 1180
+  визит канон-кластера: 164-й (150 OLD-канон + 14 NEW-скошенных)
+  OLD-канон конверт профиля (история, n=150): 5.5299e-05 - 5.8978e-05
+  текущий 5.6760e-05 INSIDE исторического OLD-канон конверта (минимум окна 295 5.5299e-05 держится)
+  широкий OLD-коридор 5.25-5.91e-05 (урок 31): INSIDE
+
+МЕДИАНА 0.060212984772584015 rank[37] соседи 0.0 / 0.09410340039878366 (НЕ-нуль: нулевой блок слева, TIE НЕТ)
+P10 -1.2658227848101267 deltas[7] соседи -1.290660574023073 / -1.1261261261261262
+P90 1.6574585635359116 deltas[67] соседи 1.5625 / 1.7625607779578605
+НУЛИ 12: parse/foxurl/0, parse/foxurl/1, parse/foxurl/2, parse/foxurl/3, parse/foxurl/4, parse/url_crate/5, parse/foxurl/8, parse/foxurl/9, parse/foxurl/13, serialize/foxurl/3, serialize/foxurl/4, serialize/foxurl/5
+ДИАПАЗОН -4.518264926075016 .. 4.2225045870784985
+FP max |f1-f2| 1.0103029524088925e-14 worst multi/naive-fox/2
+
+КОНТРОЛ serialize/foxurl/3: 4 -> 4 (НУЛЬ)
+  на контрастах: {'6370dbb': 2, '86b4cf4': 19, 'a4241de': 3, 'da96246': 3} (квантование 2/3/19/4)
+
+СЧЁТЧИК corpus-all: 1186 -> 1180 -0.51% (СТОИТ (14)); INSIDE OLD-зоны 1163-1228
+
+СВИДЕТЕЛИ same-form OLD-канон:
+  vs 9aeda95 idx 307 distance 3: spread 3.6 п.п., флагов 0
+  vs 581d0fb idx 305 distance 5: spread 3.0 п.п., флагов 0
+  vs 7676353 idx 303 distance 7: spread 3.0 п.п., флагов 0
+  vs 68f8b0a idx 300 distance 10: spread 2.8 п.п., флагов 0
+  vs b94692e idx 297 distance 13: spread 4.2 п.п., флагов 0
+  vs d092b80 idx 283 distance 27: spread 2.8 п.п., флагов 0
+  vs d70534f idx 66 distance 244: spread 2.2 п.п., флагов 0
+КОНТРАСТЫ чужие классы/формы:
+  vs da96246 idx 309 [MEDIUM]: spread 56.5 п.п., флагов 21
+  vs 6370dbb idx 304 [FAST]: spread 49.9 п.п., флагов 75
+  vs 86b4cf4 idx 302 [CLASSIC]: spread 29.3 п.п., флагов 2
+  vs a4241de idx 301 [MEDIUM]: spread 37.0 п.п., флагов 55
+  vs fe76381 idx 299 [CLASSIC]: spread 51.9 п.п., флагов 8
+  vs b74d5b2 idx 298 [CLASSIC]: spread 54.8 п.п., флагов 10
+  vs 33c89cc idx 296 [FAST]: spread 56.4 п.п., флагов 75
+
+крейт-стазис проверяется git-диффами 729d87c->3b83288 и da96246->3b83288 crates/ (см. bash)
+дубли: 3b83288 x1, da96246 x1, 729d87c x1 (ожидаем x1 x1 x1 — НОЧНОЙ СЛЕД ДУБЛЕЙ НЕТ)
