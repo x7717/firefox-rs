@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793579405281,
+  "lastUpdate": 1793585016400,
   "repoUrl": "https://github.com/x7717/firefox-rs",
   "entries": {
     "Rust Benchmark": [
@@ -145829,6 +145829,478 @@ window.BENCHMARK_DATA = {
             "name": "canonical/url_crate/dirty-all",
             "value": 3074,
             "range": "± 39",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "z@container",
+            "name": "Z User"
+          },
+          "committer": {
+            "email": "z@container",
+            "name": "Z User"
+          },
+          "distinct": true,
+          "id": "da96246049a4501aa692a334fd60b81c3b85f7ae",
+          "message": "docs: итерация 295: 283-й вердикт ТИХИЙ ПАРИТЕТ exit 0 БЕЗ заметки (729d87c #309 vs 9aeda95 #308, одноклассная CLASSIC СМЕЖНАЯ пара, записи idx 308 vs 307, distance 1, NOTHING between; план окна 294 'судимая = точка #309, ожидаемый idx 308' СБЫЛСЯ ТОЧНО; СНАЧАЛА строка профиля (урок 229): канонический CLASSIC OLD-канон (68f8b0a-класса) — canary 1374335 INSIDE канон-кластера 1345000-1375000, 163-й визит кластера (149 OLD-канон + 14 NEW-скошенных), zzz 207609 INSIDE OLD-конверта 203811-226663, small 143 INSIDE 143-153, corpus-all 1186 INSIDE 1163-1228, профиль 76/1374335 = 5.5299e-05 [OLD] — НОВЫЙ НИЖНИЙ МИНИМУМ исторического OLD-канон конверта (n=149: 5.5299e-05-5.8978e-05 — конверт расширен вниз на -0.27% от прежней границы 5.5448e-05, OLD сохраняется, прецедент fe76381 w288: верхний выброс +0.98%; INSIDE широкого OLD-коридора 5.25-5.91e-05, урок 31); пара SAME-PROFILE [OLD] 5.5299e-05 vs [OLD] 5.6745e-05 (9aeda95: 77/1356953) — CLASSIC-коридор 2.2..4.5 ПРИМЕНИМ (same-profile, уроки 229/31); разброс 2.811230210573444 -> 2.8 п.п. УЗКИЙ <20 INSIDE коридора (прецедент окна 276 2.9); 0 унитарных флагов; |canary-vs-пары| 1.2809581466712554 -> 1.28 < 3 -> БЕЗ заметки; РЕЕСТР-МАТЕРИАЛИЗАЦИЯ: 203-й КАНДИДАТ МАТЕРИАЛИЗОВАЛСЯ — median 0.0 РОВНО rank[26] (f2 0.0, |diff| 0.000e+00 — ОБЕ ФОРМУЛЫ байт-равны, материализация чистая), TIE-пара нулей в ядре (сосед rank[27] = 0.0 — прецедент w276), 16 нулей пары, реестр 83 -> 84, серия материализаций = 1 (первая после w276 — 184-го, интервал 19 кандидатов, после четырёх НЕ-материализаций подряд 199-202); 16 точных нулей (parse/foxurl/0-7,13 + parse/url_crate/7,8 + serialize/foxurl/0,1,2,3,5); откат НЕ нужен; код не тронут — 119-й подряд некодовый docs/scripts-коммит 177-295 (git-дифф 9aeda95->729d87c crates/ 0 файлов) => СРЕДА, НЕ код; CDN poll 1 FRESH 309 записей sha256 1e9ccb76 + РЕ-ПОЛЛ ТОТ ЖЕ sha (STABLE), data295.js = ПОЛНЫЙ CDN БЕЗ СРЕЗА — УРОК 156 РУТИННАЯ ФОРМА четвёртый раз подряд; [GUARD] auto-pair=9aeda95 [CLASSIC] ДЕВЯНОСТО ПЕРВОЕ окно подряд (урок 133); ПРЕ-РЕГИСТРАЦИЯ СЕМЬ/СЕМЬ СБЫЛАСЬ ПОБАЙТНО (v295_prereg.txt); МАШИНА: REAL_EXIT=0, 944 строк, дым x3 БАЙТ-ИДЕНТИЧЕН sha256 437d5a2c..., финал == смоуку; контраст-свидетельства: same-form OLD-канон 2.1-3.5 при 0 флагов на дистанциях 1-242 (9aeda95/581d0fb/7676353/68f8b0a/b94692e/d092b80/d70534f), чужие классы/формы 29.5-58.2 (6370dbb/86b4cf4/a4241de/fe76381/b74d5b2/33c89cc) — классовый сдвиг; КОНТРОЛ serialize/foxurl/3: 4->4 в паре, на контрастах 2/19/3 — квантование 2/3/19/4 подтверждено; счёт 283 = 199 ПАРИТЕТ + 4 ЛТ + 62 ДРЕЙФ + 18 РЕГРЕСС; точек 299 (записей 309); стазис крейтов 280; серия пяти значений 185/185; счётчик corpus-all 1181->1186 +0.42% СТОИТ (14); НЕТ schedule-событий новых, НОЧНОЙ СЛЕД ДУБЛЕЙ НЕТ (729d87c x1, 9aeda95 x1, белый список 10); СТАРТ СЕССИИ: СНАПШОТ-ОТКАТ #88 — СЕМЬДЕСЯТЫЙ пережитый (прогноз окна 294 СБЫЛСЯ ТОЧНО): /home/z/firefox-rs отсутствовал ЦЕЛИКОМ, восстановлен git clone до 729d87c ДО окна (урок 157; симлинк по-прежнему заблокирован — обойдено ПРЯМЫМ КЛОНОМ в настоящий каталог); локальный worklog снова в эре 188/213 (7810 строк — аппенды окон 293/294 потеряны), my-project git-репо на бэкапе 732adc6 (хвосты 291-294 потеряны) — УРОК 290 исполнен окном: rebuild_local_295.py (конденсаты 189-279 + полные 280-294 из repo WORKLOG.md, АППЕНД к базису 7810) + аппенд записи окна 295 + коммит хвоста в my-project git-репо ПОСЛЕ окна) [Job 472137, trace 4c124c42]",
+          "timestamp": "2026-11-02T01:47:29Z",
+          "tree_id": "4ea113f856d77ca39201dc229c1df64f709d427f",
+          "url": "https://github.com/x7717/firefox-rs/commit/da96246049a4501aa692a334fd60b81c3b85f7ae"
+        },
+        "date": 1793585012820,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse/foxjson/small",
+            "value": 115,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/serde_json/small",
+            "value": 554,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxjson/session-500",
+            "value": 115742,
+            "range": "± 1264",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/serde_json/session-500",
+            "value": 604926,
+            "range": "± 3682",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxjson/session-5000",
+            "value": 1185503,
+            "range": "± 21699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/serde_json/session-5000",
+            "value": 6611416,
+            "range": "± 168954",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxjson/nums-5000",
+            "value": 724618,
+            "range": "± 13997",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/serde_json/nums-5000",
+            "value": 3852874,
+            "range": "± 35481",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxjson/strs-5000",
+            "value": 288830,
+            "range": "± 2699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/serde_json/strs-5000",
+            "value": 1801297,
+            "range": "± 20107",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "classifier/foxsearch-multi/8",
+            "value": 6687,
+            "range": "± 49",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "classifier/naive-fox/8",
+            "value": 51884,
+            "range": "± 385",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "classifier/naive-std/8",
+            "value": 75277,
+            "range": "± 558",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "classifier/foxsearch-multi/32",
+            "value": 14678,
+            "range": "± 75",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "classifier/naive-fox/32",
+            "value": 231859,
+            "range": "± 1218",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "classifier/naive-std/32",
+            "value": 542753,
+            "range": "± 4861",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "multi/foxsearch-multi/2",
+            "value": 363337,
+            "range": "± 1297",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "multi/naive-fox/2",
+            "value": 634042,
+            "range": "± 71057",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "multi/naive-std/2",
+            "value": 2004998,
+            "range": "± 30228",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "multi/foxsearch-multi/4",
+            "value": 702742,
+            "range": "± 1359",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "multi/naive-fox/4",
+            "value": 1695844,
+            "range": "± 5697",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "multi/naive-std/4",
+            "value": 3992284,
+            "range": "± 13774",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "multi/foxsearch-multi/8",
+            "value": 1304130,
+            "range": "± 8115",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "multi/naive-fox/8",
+            "value": 3774004,
+            "range": "± 12684",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "multi/naive-std/8",
+            "value": 9600174,
+            "range": "± 223679",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "find/foxsearch/Mozilla Corporation",
+            "value": 323017,
+            "range": "± 15564",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "find/std/Mozilla Corporation",
+            "value": 1056576,
+            "range": "± 11933",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "find/foxsearch/горячие пути",
+            "value": 315969,
+            "range": "± 1458",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "find/std/горячие пути",
+            "value": 650311,
+            "range": "± 2787",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru",
+            "value": 526189,
+            "range": "± 3296",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "find/std/https://example.com/search?q=firefox+rust&lang=ru",
+            "value": 741129,
+            "range": "± 3746",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "find/foxsearch/zzz-absent-zzz",
+            "value": 315939,
+            "range": "± 2008",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "find/std/zzz-absent-zzz",
+            "value": 1227446,
+            "range": "± 9854",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/0",
+            "value": 54,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/0",
+            "value": 248,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/1",
+            "value": 74,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/1",
+            "value": 383,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/2",
+            "value": 63,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/2",
+            "value": 325,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/3",
+            "value": 60,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/3",
+            "value": 289,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/4",
+            "value": 60,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/4",
+            "value": 299,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/5",
+            "value": 64,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/5",
+            "value": 324,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/6",
+            "value": 40,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/6",
+            "value": 206,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/7",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/7",
+            "value": 326,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/8",
+            "value": 73,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/8",
+            "value": 311,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/9",
+            "value": 67,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/9",
+            "value": 335,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/10",
+            "value": 55,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/10",
+            "value": 314,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/11",
+            "value": 70,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/11",
+            "value": 351,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/12",
+            "value": 57,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/12",
+            "value": 384,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/13",
+            "value": 66,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/13",
+            "value": 315,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/foxurl/corpus-all",
+            "value": 942,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse/url_crate/corpus-all",
+            "value": 4723,
+            "range": "± 48",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "serialize/foxurl/0",
+            "value": 35,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "serialize/foxurl/1",
+            "value": 104,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "serialize/foxurl/2",
+            "value": 26,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "serialize/foxurl/3",
+            "value": 3,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "serialize/foxurl/4",
+            "value": 71,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "serialize/foxurl/5",
+            "value": 84,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "serialize/foxurl/6",
+            "value": 128,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "serialize/foxurl/dirty-all",
+            "value": 482,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "canonical/foxurl/corpus-all",
+            "value": 1128,
+            "range": "± 37",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "canonical/url_crate/corpus-all",
+            "value": 4713,
+            "range": "± 41",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "canonical/foxurl/dirty-all",
+            "value": 977,
+            "range": "± 23",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "canonical/url_crate/dirty-all",
+            "value": 2639,
+            "range": "± 64",
             "unit": "ns/iter"
           }
         ]
