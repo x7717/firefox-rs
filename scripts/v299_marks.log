@@ -1,0 +1,22 @@
+АНАТОМИЯ — same-class CLASSIC свидетели (same-profile [OLD], ожидание УЗКОГО 2.2-4.5, урок 31/W276):
+  d4214c9 idx 312 [пара] distance 2: spread 2.2 п.п. (p10 -1.4 / p90 0.9), профиль 5.6537e-05 [OLD]
+  3b83288 idx 310 [CLASSIC] distance 4: spread 2.8 п.п. (p10 -1.8 / p90 1.0), профиль 5.6760e-05 [OLD]
+  729d87c idx 308 [CLASSIC] distance 6: spread 2.4 п.п. (p10 -1.4 / p90 1.0), профиль 5.5299e-05 [OLD]
+  9aeda95 idx 307 [CLASSIC] distance 7: spread 2.7 п.п. (p10 -1.4 / p90 1.4), профиль 5.6745e-05 [OLD]
+  2069adf idx 306 [CLASSIC] distance 8: spread 3.5 п.п. (p10 -2.8 / p90 0.7), профиль 5.5950e-05 [OLD]
+  581d0fb idx 305 [CLASSIC] distance 9: spread 2.9 п.п. (p10 -1.7 / p90 1.1), профиль 5.6622e-05 [OLD]
+АНАТОМИЯ — КОНТРАСТЫ чужих классов (ожидание ШИРОКОГО):
+  8869158 idx 313 [MEDIUM] distance 1: spread 90.2 п.п. (p10 -30.0 / p90 60.2)
+  c9db45c idx 311 [FAST] distance 3: spread 59.2 п.п. (p10 63.0 / p90 122.2)
+  6370dbb idx 304 [FAST] distance 10: spread 51.0 п.п. (p10 71.4 / p90 122.5)
+
+ПЯТЬ ЗНАЧЕНИЙ (n=75): MEDIAN 0.0 rank[37] соседи -0.03378284571883417 / 0.0
+P10 -1.3513513513513513 deltas[7] | P90 0.8983870699087194 deltas[67] | SPREAD 2.2497384212600706 -> 2.2 п.п. УЗКИЙ <20
+CANARY-vs-ПАРА -0.09222172864343746 -> -0.09% (cur 1360679 vs пара 1361935)
+НУЛИ 8 (parse/foxurl/3, parse/foxurl/4, parse/url_crate/8, parse/foxurl/9, parse/foxurl/12, parse/url_crate/13, serialize/foxurl/2, serialize/foxurl/3)
+FP max |f1-f2| 1.1102230246251565e-14 worst parse/serde_json/small
+ФЛАГИ 0
+
+КОНТРОЛ serialize/foxurl/3: {'a4241de': 3, '86b4cf4': 19, '6370dbb': 2, '3b83288': 4, 'c9db45c': 2, 'd4214c9': 4, '8869158': 2, 'b9c5c45': 4} (квантование 2/3/19/4; 4 = CLASSIC-норма; контрол закрыт окном 292)
+СЧЁТЧИКИ: точек 305 (записей 315; +1 НОВАЯ точка за окно — b9c5c45 #315); счётчик corpus-all 1191 -> 1183 -0.67% СТОИТ (14) — при OLD-канон судимой +8.0 и выше инкремент эры урока 229
+Серия пяти значений 99-299 ожидается 189/189 (СТО ВОСЕМЬДЕСЯТ ДЕВЯТЫЙ) при 7/7 пре-регистрации
