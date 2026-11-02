@@ -1,0 +1,24 @@
+AUTOPAIR: 095148c [FAST] vs c9db45c [FAST] idx 317 vs 311, distance 6, between=['d4214c9', '8869158', 'b9c5c45', 'be8f248', '6f22e55']
+
+ПЯТЬ ЗНАЧЕНИЙ (n=75):
+  MEDIAN 34.99058380414313 (f2 34.99058380414313, |diff| 0.000e+00) rank[37] соседи 32.973188948603315 / 35.39033457249071
+  P10 10.0 (f2 10.000000000000009) deltas[7] соседи deltas[6]=9.523809523809524 / deltas[8]=10.256410256410255
+  P90 124.91829572205886 (f2 124.91829572205889) deltas[67] соседи deltas[66]=116.3525996629725 / deltas[68]=139.30879726932255
+  SPREAD 114.91829572205886 -> 114.9 п.п. (f2 114.91829572205887)
+  CANARY-vs-ПАРА 18.268443434850365 -> +18.27% (cur 895505 vs пара 757180)
+  НУЛИ 1: serialize/foxurl/3 2->2
+  ДИАПАЗОН 0.0 .. 210.28790617697632
+  FP DUAL max |f1-f2| 2.842170943040401e-14 worst multi/naive-fox/4
+  ФЛАГИ 46: multi/naive-fox/2 +210.3 / find/foxsearch/горячие пути +199.8 / find/foxsearch/zzz-absent-zzz +199.5 / find/foxsearch/Mozilla Corporation +196.1 / multi/naive-fox/4 +175.0 / multi/naive-fox/8 +147.0 / find/foxsearch/https://example.com/search?q=firefox+rust&lang=ru +139.3 / find/std/zzz-absent-zzz +124.9 / multi/foxsearch-multi/2 +116.4 / multi/naive-std/2 +99.9 / multi/naive-std/8 +88.1 / multi/naive-std/4 +78.2 / classifier/naive-std/8 +77.3 / classifier/naive-std/32 +67.5 / find/std/https://example.com/search?q=firefox+rust&lang=ru +55.8 / find/std/горячие пути +54.9 / find/std/Mozilla Corporation +54.7 / parse/url_crate/1 +50.0 / parse/url_crate/11 +49.2 / parse/url_crate/9 +45.4 / parse/url_crate/7 +45.1 / parse/url_crate/2 +44.2 / parse/url_crate/3 +44.1 / multi/foxsearch-multi/4 +43.2 / parse/url_crate/10 +42.9 / serialize/foxurl/5 +42.5 / parse/url_crate/4 +42.1 / canonical/foxurl/dirty-all +42.1 / classifier/naive-fox/32 +41.8 / parse/url_crate/8 +39.0 / parse/foxurl/8 +38.6 / canonical/url_crate/dirty-all +38.3 / serialize/foxurl/dirty-all +38.2 / parse/url_crate/0 +37.0 / parse/url_crate/5 +35.8 / parse/url_crate/13 +35.8 / canonical/url_crate/corpus-all +35.4 / parse/url_crate/corpus-all +35.0 / parse/serde_json/session-5000 +33.0 / parse/foxjson/nums-5000 +33.0 / classifier/naive-fox/8 +32.5 / serialize/foxurl/0 +31.6 / parse/foxurl/9 +27.9 / serialize/foxurl/1 +27.6 / parse/url_crate/12 +27.1 / canonical/foxurl/corpus-all +20.5
+  МАШИНА-СТРОКА: median +34.99%, p10 +10.00%, p90 +124.92% (разброс 114.9 п.п.), canary +18.27%
+  ОТНОШЕНИЯ exact: foxjson=2.752962110665802 foxsearch=72.50767829603689 foxurl=-16.55328798185942
+  ОТНОШЕНИЯ печатные: foxjson +2.8% | foxsearch +72.5% | foxurl -16.6%
+  span 89.06096627789631 -> 89, suppressed ['foxurl'], top foxsearch +72.51
+
+РЕЕСТР: 210-й КАНДИДАТ НЕ материализуется — median 34.99058380414313 rank[37] НЕ-нуль
+
+КОНТРОЛ serialize/foxurl/3: {'a4241de': 3, '86b4cf4': 19, '6370dbb': 2, '3b83288': 4, 'c9db45c': 2, 'd4214c9': 4, '8869158': 2, 'b9c5c45': 4, 'be8f248': 4, '6f22e55': 4}
+
+СЧЁТЧИКИ: точек 308 (записей 318); дубли ['2b6489b', '336e9ff', '415fe95', '628dd1f', '68e6dd4', '6a239dc', '76d4050', '87d7d86', 'f3a9631', 'ff7b23e'] (10)
+  corpus-all 1180 -> 693 -41.27%
+  хвост 6 записей: [('d4214c9', 'CLASSIC'), ('8869158', 'MEDIUM'), ('b9c5c45', 'CLASSIC'), ('be8f248', 'CLASSIC'), ('6f22e55', 'CLASSIC'), ('095148c', 'FAST')]
